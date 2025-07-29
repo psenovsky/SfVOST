@@ -1,0 +1,172 @@
+---
+title: "vost_tepmplate"
+author: "Pavel Šenovský"
+date: "2025-07-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# analýza potřebných analytických balíků - chybějící doinstalovat
+packages <- c("tidyverse", "plotly", "jsonlite", "wordcloud2")
+install.packages(setdiff(packages, rownames(installed.packages())))  
+
+# pčipojit potřebné knihovny
+library(knitr)
+library(dplyr)
+library(plotly)
+library(jsonlite)
+library(lubridate)
+library(tidyr)
+library(purrr)
+library(wordcloud2)
+```
+
+## Nastavení
+
+V následujícím bloku kódu jsou realizovaný nastavení, která je potřeba změnit k tomu, aby se realizovaly potřebné analýzy (později)
+
+```{r mastavení}
+soubor <- "postIran_dezinfor.json"
+```
+
+## Analytika
+
+Zde by měl být popis situace a dat, která budou analyzována. Pro tento příklad jsou analyzována data ze sociální sítě ze dne 24.6.2025 v angličtině a vyhledáním slova Netanyahu.
+
+```{r načtení souboru}
+data <- stream_in(file(soubor), pagesize = 10000) %>%
+  mutate(indexed_at = ymd_hms(indexed_at),
+         ID = row_number())
+data$datum <- as.Date(data$indexed_at)
+dny_data <- data %>% # agregace po dnech
+  group_by(datum) %>%
+  summarise(pocet = n()) %>%
+  arrange(datum)
+res <- list( # základní objekt výsledků
+  pocet = nrow(data),
+  min_datum = min(data$datum),
+  max_datum = max(data$datum)
+)
+res$entity <- ifelse(is.null(data$entity),FALSE, TRUE) # detekovány entity?
+res$sentiment <- ifelse(is.null(data$sentiment), FALSE, TRUE) # detekován sentiment?
+res$dezinformace <- ifelse(is.null(data$dezinformace), FALSE, TRUE) # detekovány dezinformace?
+
+res$pocet24 <- data %>% #příspěvky za posledních 24 hodin (od max_datum)
+  select(ID, indexed_at) %>%
+  filter(indexed_at >= res$max_datum - 24*60*60) %>%
+  nrow()
+  
+if(res$entity) { # vytvoř dataset entit
+  entity <- data %>%
+    select(ID, entity) %>%
+    unnest(entity, keep_empty = TRUE)
+  entity$slovo_skupina = paste(entity$slovo, " (", entity$skupina, ")", sep = "" )
+  entity_data <- entity %>%
+    group_by(slovo_skupina) %>%
+    summarise(pocet = n()) %>%
+    arrange(desc(pocet))
+}
+
+if(res$sentiment) { # detekován sentiment?
+  d2 <- data$sentiment
+  colnames(d2) <- c("label", "score", "sentiment")
+  data$sentiment2 <- d2$sentiment
+  d2 <- data %>% # vývoj sentimentu ve dnech
+    group_by(datum, sentiment2) %>%
+    summarise(pocet = n()) %>%
+    pivot_wider(names_from = sentiment2, values_from = pocet) %>%
+    arrange(datum)
+  dny_data <- d2 %>%
+    inner_join(dny_data, by = "datum")
+  if(!is.null(dny_data$negativní)) { 
+    dny_data$negativní_prc <- 100 * dny_data$negativní / dny_data$pocet
+  } else {
+    dny_data$negativní_prc <- 0
+  }
+  if(!is.null(dny_data$pozitivní)) { 
+    dny_data$pozitivní_prc <- 100 * dny_data$pozitivní / dny_data$pocet
+  } else {
+    dny_data$pozitivní_prc <- 0
+  }
+  if(!is.null(dny_data$neutrální)) { 
+    dny_data$neutrální_prc <- 100 * dny_data$neutrální / dny_data$pocet
+  } else {
+    dny_data$neutrální_prc <- 0
+  }
+}
+
+if (res$dezinformace) { # detekovány dezinformace?
+  d2 <- data$dezinformace
+  colnames(d2) <- c("label", "score")
+  data$dezinformace2 <- d2$label
+  d2 <- data %>% # dezinformace ve dnech
+    group_by(datum, dezinformace2) %>%
+    summarise(pocet = n()) %>%
+    pivot_wider(names_from = dezinformace2, values_from = pocet) %>%
+    arrange(datum)
+  dny_data <- d2 %>%
+    inner_join(dny_data, by = "datum")
+  if(!is.null(dny_data$`reliable news`)) {
+    dny_data$`reliable news_prc` <- 100 * dny_data$`reliable news` / dny_data$pocet
+  } else {
+    dny_data$`reliable news_prc` <- 0
+  }
+  if(!is.null(dny_data$`fake news`)) {
+    dny_data$`fake news_prc` <- 100 * dny_data$`fake news` / dny_data$pocet
+  } else {
+    dny_data$`fake news_prc` <- 0
+  }
+}
+
+
+# TODO doplnit
+
+```
+
+**Základní data o souboru**
+
+- počet záznamů `r res$pocet`
+- počet záznamů za posledních 24 hodin datasetu: `r res$pocet24`
+- záznamy od `r res$min_datum` do `r res$max_datum`
+- záznamy **`r ifelse(res$entity, "obsahují", "neobsahují")`** identifikaci pojmenovaných entit (NER)
+- záznamy **`r ifelse(res$sentiment, "obsahují", "neobsahují")` analýzu sentimentu příspěvků**
+
+```{r vývoj počtu příspěvků ve dnech}
+fig <- plot_ly(data = dny_data, x = ~datum, y = ~pocet) %>%
+  layout(title = 'Vývoj počtu příspěvků ve dnech')
+fig
+```
+
+```{r Vývoj sentimentu v čase}
+if(!is.null(res$sentiment)){ #pouze pokud byl analyzován sentiment
+ fig <- plot_ly(data = dny_data, x = ~datum, y = ~pozitivní_prc, name = "pozitivní", type = "scatter", mode = 'lines+markers') %>%
+  add_trace(y = ~negativní_prc, name = "negativní") %>%
+  add_trace(y = ~neutrální_prc, name = "neutrální") %>%
+  layout(title = 'Vývoj sentimentu v čase',
+         yaxis = list(title = "sentiment [%]"))
+fig 
+}
+```
+
+```{r Vývoj dezinformací v čase}
+if(!is.null(res$dezinformace)){ #pouze pokud byl analyzován sentiment
+ fig <- plot_ly(data = dny_data, x = ~datum, y = ~`fake news_prc`, name = "dezinformace", type = "scatter", mode = 'lines+markers') %>%
+  layout(title = 'Vývoj počtu dezinformací v čase',
+         yaxis = list(title = "dezinformace [%]"))
+fig 
+}
+```
+
+```{r NER v tabelární podobě}
+if(!is.null(res$entity)){
+  kable(entity_data, label = "Nejčastěji používané pojmenované entity") 
+}
+```
+
+```{r Word cloud pro entity}
+if(!is.null(res$entity)){
+  wordcloud2(entity_data, size=1.6)
+}
+```
+

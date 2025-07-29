@@ -1,0 +1,29 @@
+#ignore live configuration file
+config.ini
+!template/config.ini
+
+#ignore python virtual environment
+.env*/
+.ropeproject/
+
+#ignore python cache
+__pycache__/
+
+#ignore python coverage
+.coverage
+
+#ignore python coverage html
+htmlcov/
+
+#ignore python coverage xml
+coverage.xml
+
+#ignore python coverage html
+htmlcov/
+
+#ignore python coverage xml
+coverage.xml
+
+#ignore Mac information for files
+.DS_Store
+__

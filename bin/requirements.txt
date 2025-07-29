@@ -1,0 +1,12 @@
+# požadavky na zprovoznění projektu
+# stav: 2025-06-19
+
+# psycopg2-binary==2.9.9  # pro PostgreSQL
+pymysql
+atproto
+transformers
+torch
+langdetect
+streamlit
+pandas
+plotly
