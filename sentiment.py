@@ -19,6 +19,7 @@ import configparser                                     # práce s konfiguračn�
 import os
 import json                                             # zpracování JSON souborů
 import argparse                                         # argumenty příkazového řádku
+import regex as re                                      # regulární výrazy s Unicode podporou
 
 # společné funkce pro všechny moduly
 from utils import check_config_ini
@@ -54,6 +55,14 @@ def check_config():
     config.set("cesty", "json_vystup", args.postJSON)
     config.set("cesty", "sentiment", args.sentiment)
 
+
+def clean_text(text):
+    """
+    Provede vyčištění textu, odstraní speciální znaky, emotikony, atd. a převede na malá písmena.
+    """
+    text = re.sub(r'[^\p{L}\s]', '', text)
+    return text.lower()
+
 # Hlavní funkce
 def main():
     global config # analyza_sentimentu
@@ -73,11 +82,12 @@ def main():
             if line.strip():  # přeskočit prázdné řádky
                 try:
                     data = json.loads(line)
+                    t = clean_text(data['record']['text'])
                     lang = data['record']['langs'][0] # první jazyk uvedený v příspěvku
                     if lang in ['en', 'nl', 'de', 'fr', 'it', 'es']:
-                        data['sentiment'] = bertMulti.sentiment(data['record']['text'])
+                        data['sentiment'] = bertMulti.sentiment(t)
                     elif lang == 'cs':
-                        data['sentiment'] = czertB.sentiment(data['record']['text'])
+                        data['sentiment'] = czertB.sentiment(t)
                     else:
                         preskoceno = preskoceno + 1
                         print(f"❌ příspěvek v neznámém jazyce {lang}, přeskakuji řádek {line}")
