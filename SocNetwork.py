@@ -25,7 +25,6 @@ import os
 import time
 import argparse                                         # argumenty příkazového řádku
 import csv                                              # zpracování CSV souborů
-import pymysql.cursors                                  # MySQL
 # následující žádek je dočasný hack v důlsedku chyby v implementaci knihovny transformers. Tato normálně funguje následovně
 # from transformers import pipeline
 # v posledních obsahuje bug (je nahlášený, ale ačkoliv je to pár měsíců není ještě opravený)
@@ -79,51 +78,6 @@ def check_config():
     config.add_section("cesty")
     config.set("cesty", "json_vystup", args.postJSON)
     config.set("cesty", "keywords", args.keywords)
-
-# TODO: refaktorovat do jiného modulu
-def inicializovat_modely():
-    """
-    Iniciace modelů strojového učení
-    """
-    global rozpoznani_entit, detekce_dezinformaci
-    # Definice předtrénovaných modelů pro analýzu textu
-    MODEL_NAZEV_NER = "dbmdz/bert-large-cased-finetuned-conll03-english"        # entity
-    MODEL_NAZEV_FAKE_NEWS = "facebook/bart-large-mnli"                          # dezinformace
-    print("Inicializace modelů strojového učení.....")
-    rozpoznani_entit = pipeline("ner", model=MODEL_NAZEV_NER, aggregation_strategy="simple")
-    detekce_dezinformaci = pipeline("zero-shot-classification", model=MODEL_NAZEV_FAKE_NEWS)
-    print("✅ Modely úspěšně inicializovány")
-
-# TODO: refaktorovat do jiného modulu
-def connect_to_db():
-    """
-    Připojí k databázi
-
-    Parameters
-    ----------
-    config : dict
-        konfigurační slovník.
-
-    Returns
-    -------
-    conn : pymysql.connection
-        připojení k databázi.
-    """
-    global config
-    try:
-        conn = pymysql.connect(host=config["databaze"]["host"],
-                               user=config["databaze"]["user"],
-                               password=config["databaze"]["password"],
-                               database=config["databaze"]["dbname"],
-                               port=int(config["databaze"]["port"]),
-                               charset=config["databaze"]["charset"],
-                               cursorclass=pymysql.cursors.DictCursor)
-        return conn
-    except Exception as e:
-        print("❌ Chyba při připojení k databázi:", e)
-        exit()
-
-
 
 def nacti_klicova_slova():
     """
