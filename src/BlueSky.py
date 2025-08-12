@@ -3,6 +3,8 @@ Název: BlueSky.py
 Popis: Načítá příspěvky ze sociální sítě BlueSky
 Autor: Pavel Šenovský
 Datum: 2025-08-11
+
+Třída pro těžení příspěvků podle klíčových slov ze sociální sítě BlueSky.
 """
 import configparser                                     # práce s konfiguračními soubory typu init
 import os
@@ -55,7 +57,7 @@ class BlueSky:
 
     def check_config(self):
         """
-        Provede kontrolu integrity konfiguračního souboru a nastavení odvozená z parametrů přikazové řádky a připraví konfigurační slovník pro další použití v aplikaci.
+        Provede kontrolu integrity konfiguračního souboru a nastavení odvozená z parametrů a připraví konfigurační slovník pro další použití v aplikaci.
         """
         result = check_config_ini() # kontrola config.ini
         # chyba parsování config.ini
