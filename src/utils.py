@@ -85,3 +85,20 @@ def is_valid_date(date_string):
         return True
     except ValueError:
         return False
+
+def uloz_json(cesta, data):
+    """
+    Uloží data do json souboru.
+
+    Parameters
+    ----------
+    cesta : str
+        cesta k souboru, do kterého se má data uložit.
+    data : dict
+        data, která se mají uložit.
+    """
+    with open(cesta, "w", encoding="utf-8") as f:
+        for post in data:
+            f.write(post.model_dump_json())
+            f.write("\n")
+    print(f"✅ ... uloženo do souboru {cesta}")

@@ -12,7 +12,7 @@ import time
 import csv                                              # zpracování CSV souborů
 from atproto import Client, models                      # API BlueSky
 from datetime import datetime, timedelta, timezone      # čas, datum, zóny
-from src.utils import check_config_ini, is_valid_date
+from src.utils import check_config_ini, is_valid_date, uloz_json
 
 class BlueSky:
 
@@ -195,8 +195,4 @@ class BlueSky:
         vsechny_prispevky : list of models.AppBskyFeedPost
             seznam příspěvků vytěžených ze sítě BlueSky
         """
-        with open(self.config['cesty']['json_vystup'], "w", encoding="utf-8") as f:
-            for post in self.prispevky:
-                f.write(post.model_dump_json())
-                f.write("\n")
-        print(f"✅ ... a uloženy do souboru {self.config['cesty']['json_vystup']}")
+        uloz_json(self.config['cesty']['json_vystup'], self.prispevky)
