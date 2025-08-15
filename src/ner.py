@@ -1,10 +1,8 @@
 """
-Název: BlueSky.py
-Popis: Načítá příspěvky ze sociální sítě BlueSky
+Název: ner.py
+Popis: analýza pojmenovaných entit (NER)
 Autor: Pavel Šenovský
 Datum: 2025-08-11
-
-přída pro pro identifikaci pojmenovaných entit (NER)
 """
 import configparser                                     # práce s konfiguračními soubory typu init
 import os
