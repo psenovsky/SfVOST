@@ -8,6 +8,7 @@ Datum: 2025-08-11
 
 import configparser                                     # práce s konfiguračními soubory typu init
 import os
+import json                                             # zpracování JSON souborů
 from datetime import datetime
 
 def check_config_ini():
@@ -99,6 +100,7 @@ def uloz_json(cesta, data):
     """
     with open(cesta, "w", encoding="utf-8") as f:
         for post in data:
+            print(post)
             f.write(post.model_dump_json())
             f.write("\n")
     print(f"✅ ... uloženo do souboru {cesta}")
