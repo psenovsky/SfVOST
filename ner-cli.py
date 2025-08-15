@@ -49,45 +49,5 @@ def main():
     check_config() # kontrola konzistence config.ini
     nr.uloz_prispevky()
 
-    # # načti příspěvky ze souboru
-    # cesta_json = config.get("cesty", "json_vystup")
-
-    # # načtení JSON souboru s příspěvky
-    # obsah = []
-    # prispevky = 0
-    # preskoceno = 0
-    # bert_en = ner_BERT_EN()
-    # ner_cz = ner_CZ()
-    # with open(cesta_json, 'r', encoding='utf-8') as file:
-    #     for line in file:
-    #         prispevky = prispevky + 1
-    #         if line.strip():  # přeskočit prázdné řádky
-    #             try:
-    #                 data = json.loads(line)
-    #                 lang = data['record']['langs'][0] # první jazyk uvedený v příspěvku
-    #                 if lang == 'en':
-    #                     data['ner'] = bert_en.ner(data['record']['text'])
-    #                 elif lang == ['cs', 'bg', 'pl', 'ru', 'uk']:
-    #                     data['ner'] = ner_cz.ner(data['record']['text'])
-    #                 else:
-    #                     preskoceno = preskoceno + 1
-    #                     print(f"❌ příspěvek v neznámém jazyce {lang}, přeskakuji řádek {line}")
-    #                 obsah.append(data)
-    #             except json.JSONDecodeError:
-    #                 print(f"❌ Chyba při načítání příspěvku: {line}")
-
-    # if not obsah:
-    #     print("⚠️ Varování: Žádné platné příspěvky nebyly načteny. Zkontrolujte soubor, který načítáte.")
-    #     exit()
-
-    # cesta_ner = config.get("cesty", "ner")
-    # with open(cesta_ner, 'w', encoding='utf-8') as file:
-    #     for obsahu in obsah:
-    #         file.write(json.dumps(obsahu) + "\n")
-
-    # print(f"✅ uloženo do souboru {config['cesty']['ner']}")
-    # print(f"Zpracováno: {prispevky} příspěvků")
-    # print(f"Preskočeno: {preskoceno} příspěvků (z důvodu neznámého jazyka)")
-
 if __name__ == "__main__":
     main()
