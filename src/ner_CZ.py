@@ -7,7 +7,7 @@ Verze: 0.1
 Datum: 2025-06-29
 """
 from transformers.pipelines import pipeline             # NLP
-from INER import INER
+from src.INER import INER
 
 class ner_CZ(INER):
 
