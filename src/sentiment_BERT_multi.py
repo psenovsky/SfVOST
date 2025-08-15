@@ -7,7 +7,7 @@ Datum: 2025-06-27
 """
 
 from transformers.pipelines import pipeline             # NLP
-from ISentiment import ISentiment
+from src.ISentiment import ISentiment
 
 class sentiment_BERT_multi(ISentiment):
     """
