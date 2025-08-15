@@ -240,14 +240,14 @@ Typ feature je patrný z 'py_type': 'app.bsky.richtext.facet#tag'. Tagy mají na
 Jednotlivé typy objektů je možné také identifikovat přímo z textu příspěvku, např. s použitím regulárních výrazů. Z pohledu efektivity zpracování se ale může jednat o postup výpočetně dražší, než použití předpřipravených facets.
 
 Podrobnější dokumentace https://docs.bsky.app/docs/advanced-guides/posts.
-## Analýza sentimentu pomocí sentiment.py
+## Analýza sentimentu pomocí sentiment-cli.py
 
 Tento skript provede analýzu příspěvků ze sítě BlueSky uložených ve formátu JSONL. Soubor ve správném formátu je možno získat pomocí skriptu SocNetwork.py
 
 použití:
 
 ```bash
-python sentiment.py -p <souborJSONL> -s <souborJSONL>
+python sentiment-cli.py -p <souborJSONL> -s <souborJSONL>
 ```
 
 Parametry:
@@ -258,7 +258,7 @@ Parametry:
 příklad použití:
 
 ```bash
-python sentiment.py -p data/post.jsonl -s data/sentiment.jsonl
+python sentiment-cli.py -p data/post.jsonl -s data/sentiment.jsonl
 ```
 
 Spočítá sentiment příspěvků uloženým v souboru data/post.jsonl a výsledek uloží do souboru data/sentiment.jsonl.
@@ -314,12 +314,12 @@ Vytvoří seznam pojmenovaných entit, které se používají v příspěvku a v
 
 Princip fungování je podobný jako v případě analýzy sentimentu. Jako vstup používáme soubor typu JSONL jako vytváří SocNetwork.py. Pracuje ale také s výstupy ze sentiment.py, jelikož jsou obsahově kompatibilní. Je tedy možné na příspěvcích s doplněným sentimentem realizovat detekci entit a na příspěvcích s detekovanými entitami realizovat detekci sentimentu.
 
-Skripty ner.py a sentiment.py tedy pouze doplňují informace k příspěvkům.
+Skripty ner-cli.py a sentiment.py tedy pouze doplňují informace k příspěvkům.
 
 Použití:
 
 ```bash
-python ner.py -p data/post.jsonl -n data/ner.jsonl
+python ner-cli.py -p data/post.jsonl -n data/ner.jsonl
 ```
 
 Parametry:
@@ -390,6 +390,7 @@ Parametry:
 Základem v tomto případě je model https://huggingface.co/facebook/bart-large-mnli, který je určen pro zpracování textu v anglickém jazyce. V současnosti skript nedetekuje jazyk a nemá tak oficiální podporu pro zpracování takových textů (jelikož ale jazyk nekontroluje, takže model ve finále příspěvek zatřídí, ale lze předpokládat, že to nebude správně.)
 
 *Pozn.:* tento modul je realizován v rozsahu v jakém byla realizována původní implementace pana Mutiny. (Byl tedy pouze přidáno rozhraní pro ovládání z příkazové řádky, načítání konfigurace z externího souboru a výstup jde do JSON místo CSV.)
+
 ### Omezení
 
 Oproti ostatním skriptům v tomto balíku, je detekce dezinformací problematická z několika důvodů. Jednak nemá implementovanou podporu češtiny, jednak je sporné, zda realizovaná detekce, resp způsob, jakým je realizována má potenciál zachytit dezinformace.
@@ -409,7 +410,7 @@ Abychom to shrnuli - schopnosti detektoru dezinformací jsou velmi omezené a ne
 ## Strategie použití
 
 Z hlediska nasazení vždy začínáme těžením příspěvků pomocí SocNetwor.py. Výsledek se uloží do souboru JSONL, se kterým lze dále pracovat, jednak ve smyslu doplňování dalších informací:
-- ner.py - detekce pojmenovaných entit
+- ner-cli.py - detekce pojmenovaných entit
 - sentiment.py - detekce sentimentu
 - dezinformace.py - detekce fake news (s velkou řadou omezení)
 
@@ -489,16 +490,18 @@ Před použitím prostudujte licence k jednotlivým modelům. Dle způsobu, jak�
 
 ## Verze
 
+### v0.5
+
+- drobné úpravy v analýze sentimentu, přidání funkce pro vyčištění textu s cílem zvýšit výkon používaných modelů
+- SocNetworks.py
+  - odebrány některé neoužívané procedury
+  - lepší kontrola data od - do
+- refaktorovány skripty s cílem osamostatnit programovou logiku do samostatných tříd pro pozdější implementaci GUI
+
 ### v0.4
 
 - první verze na GitHubu
 - doplněny některé infformace o licenci
-
-### v0.3
-
-- skripty nyní reportují verzi balíku
-- opravena chyba ve vyhodnocování jazyků v sentiment.py a ner.py - skript fungoval správně ve smyslu zpracování příspěvků, ale za určitých okolností generoval matoucí chybová hlášení navíc, která u uživatele mohla způsobit dojem, že skript nefunguje vůbec
-- pro sentiment a NER implementovány abstraktní třídy modelů pro vynucení kompatibility v implementaci modelů způsobit dojem, že skript nefunguje vůbec
 
 # Věci k dodělání
 

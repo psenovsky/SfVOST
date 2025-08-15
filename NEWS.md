@@ -1,3 +1,16 @@
+### v0.5
+
+- drobné úpravy v analýze sentimentu, přidání funkce pro vyčištění textu s cílem zvýšit výkon používaných modelů
+- SocNetworks.py
+  - odebrány některé neoužívané procedury
+  - lepší kontrola data od - do
+- refaktorovány skripty s cílem osamostatnit programovou logiku do samostatných tříd pro pozdější implementaci GUI
+
+### v0.4
+
+- první verze na GitHubu
+- doplněny některé infformace o licenci
+
 ## v0.3
 
 - skripty nyní reportují verzi balíku
