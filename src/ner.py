@@ -8,7 +8,7 @@ import configparser                                     # práce s konfiguračn�
 import os
 import json                                             # zpracování JSON souborů
 
-from src.utils import check_config_ini, uloz_json
+from src.utils import check_config_ini
 from src.ner_CZ import ner_CZ
 from src.ner_BERT_EN import ner_BERT_EN
 
