@@ -143,7 +143,6 @@ class sentiment:
         vsechny_prispevky : list of models.AppBskyFeedPost
             seznam příspěvků vytěžených ze sítě BlueSky
         """
-        #uloz_json(self.nerJSONL, self.ner)
         with open(self.cestaExport, "w", encoding="utf-8") as f:
             for post in self.sentiment:
                 f.write(json.dumps(post))
