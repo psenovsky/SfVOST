@@ -10,3 +10,4 @@ langdetect
 streamlit
 pandas
 plotly
+PyQt6
