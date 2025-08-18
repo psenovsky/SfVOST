@@ -35,7 +35,7 @@ class sentiment:
         r = self.check_config()
         if not r["validace"]:
             raise Exception(r["zprava"])
-        if os.path.exists(self.cestaJSON):
+        if cestaJSON != "" and os.path.exists(self.cestaJSON):
             self.mode = "soubor"
         elif self.postsJSONL != "":
             self.mode = "text"
