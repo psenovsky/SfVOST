@@ -105,21 +105,30 @@ class sentiment:
         msg = ""
         for line in self.postsJSONL:
             prispevky += 1
-            if line.strip():
+            if self.mode == "soubor":
+                if not line.strip():
+                    continue
                 try:
                     data = json.loads(line)
-                    t = self.clean_text(data['record']['text'])
-                    lang = data['record']['langs'][0]  # first language in post
-                    if lang in ['en', 'nl', 'de', 'fr', 'it', 'es']:
-                        data['sentiment'] = bertMulti.sentiment(t)
-                    elif lang == 'cs':
-                        data['sentiment'] = czertB.sentiment(t)
-                    else:
-                        preskoceno = preskoceno + 1
-                        msg += f"❌ příspěvek v neznámém jazyce {lang}, přeskakuji řádek {line}"
-                    obsah.append(data)
                 except json.JSONDecodeError:
                     msg += f"❌ Chyba při načítání příspěvku: {line}"
+                    continue
+            else:  # mode == "text"
+                data = line  # už je to slovník
+
+            try:
+                t = self.clean_text(data['record']['text'])
+                lang = data['record']['langs'][0]
+                if lang in ['en', 'nl', 'de', 'fr', 'it', 'es']:
+                    data['sentiment'] = bertMulti.sentiment(t)
+                elif lang == 'cs':
+                    data['sentiment'] = czertB.sentiment(t)
+                else:
+                    preskoceno += 1
+                    msg += f"❌ příspěvek v neznámém jazyce {lang}, přeskakuji řádek {line}"
+                obsah.append(data)
+            except Exception as e:
+                msg += f"❌ Chyba při zpracování příspěvku: {e}"
 
         if not obsah:
             error = "⚠️ Varování: Žádné platné příspěvky nebyly načteny. Zkontrolujte soubor, který načítáte."
