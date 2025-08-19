@@ -105,20 +105,29 @@ class ner:
         msg = ""
         for line in self.postsJSONL:
             prispevky += 1
-            if line.strip():
+            if self.mode == "soubor":
+                if not line.strip():
+                    continue
                 try:
                     data = json.loads(line)
-                    lang = data['record']['langs'][0]  # first language in post
-                    if lang == 'en':
-                        data['ner'] = bert_en.ner(data['record']['text'])
-                    elif lang in ['cs', 'bg', 'pl', 'ru', 'uk']:
-                        data['ner'] = ner_cz.ner(data['record']['text'])
-                    else:
-                        preskoceno += 1
-                        msg += f"❌ příspěvek v neznámém jazyce {lang}, přeskakuji řádek {line}"
-                    obsah.append(data)
                 except json.JSONDecodeError:
                     msg += f"❌ Chyba při načítání příspěvku: {line}"
+                    continue
+            else:  # mode == "text"
+                data = line  # už je to slovník
+
+            try:
+                lang = data['record']['langs'][0]  # first language in post
+                if lang == 'en':
+                    data['ner'] = bert_en.ner(data['record']['text'])
+                elif lang in ['cs', 'bg', 'pl', 'ru', 'uk']:
+                    data['ner'] = ner_cz.ner(data['record']['text'])
+                else:
+                    preskoceno += 1
+                    msg += f"❌ příspěvek v neznámém jazyce {lang}, přeskakuji řádek {line}"
+                obsah.append(data)
+            except json.JSONDecodeError:
+                msg += f"❌ Chyba při načítání příspěvku: {line}"
 
         if not obsah:
             error = "⚠️ Varování: Žádné platné příspěvky nebyly načteny. Zkontrolujte soubor, který načítáte."
