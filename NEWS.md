@@ -1,3 +1,7 @@
+### v0.6
+
+Tato verze se zcela zaměřuje na doplnění alespoň základního rozhraní pro ovládání analytických činností pomocí GUI.
+
 ### v0.5
 
 - drobné úpravy v analýze sentimentu, přidání funkce pro vyčištění textu s cílem zvýšit výkon používaných modelů

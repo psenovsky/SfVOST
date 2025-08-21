@@ -4,9 +4,9 @@
 
 Původní verze projektu vznikla pro účely diplomové práce Využití informací ze sociálních sítí pro podporu krizového řízení. Tento repozitář pak představuje aplikaci navrhovaných postup pro praktické řešení tohoto problému.
 
-Implementace v diplomové práci posloužila jako první prototyp pro ověření životaschopnosti navrhovaného řešení. V tomto repozitář je dostupný kód pro druhý prototyp, který na dosažených výsledcích staví, ale zaroveň přistupuje k řešení problému odlišným způsobem.
+Implementace v diplomové práci posloužila jako první prototyp pro ověření životaschopnosti navrhovaného řešení. V tomto repozitář je dostupný kód pro druhý prototyp, který na dosažených výsledcích staví, ale zároveň přistupuje k řešení problému odlišným způsobem.
 
-Diplomovou práci je možno nalézt: https://dspace.vsb.cz/handle/10084/156606
+původní diplomovou práci je možno nalézt: https://dspace.vsb.cz/handle/10084/156606
 
 Zatímco první prototyp byl navržen v podstatě jako monolitická aplikace, kde jeden skript dělá vše. Cílem druhého prototypu je převést kód do podoby menších úzce zaměřených modulů, které lze snadno rozšiřovat a přizpůsobit. Druhý prototyp je tedy navržen jako modulární architektura, kde každý modul je samostatný skript, který může být použit jako samostatná aplikace.
 
@@ -21,11 +21,11 @@ Původní projekt se skládal ze dvou hlavních komponent:
 
 (oba původní moduly jsou stále dostupné v repozitáři v nezměněné podobě, ... alespoň dočasně)
 
-Nový prototayp je založen na následujících modulech:
+Nový prototyp je založen na následujících modulech:
 
 1. **načítání příspěvků ze sociálních sítí (SocNetwork.py)** - zajišťuje sběr údajů ze sociálních sítí (v současnosti pouze BlueSky) a zpracování dat.
-2. **skórování sentimentu (sentiment.py)** - odhad sentimentu příspěvků na základě metod strojového učení
-3. **detekce pojmenovaných entit (ner.py)** - detekce pojmenovaných entit v textu příspěvků
+2. **skórování sentimentu (sentiment-cli.py)** - odhad sentimentu příspěvků na základě metod strojového učení
+3. **detekce pojmenovaných entit (ner-cli.py)** - detekce pojmenovaných entit v textu příspěvků
 4. **detekce potenciálních dezinformací (dezinformace.py)** - detekce potenciálních dezinformací příspěvků na základě metod strojového učení
 5. **(plán) import dat do DB (DBPush.py)** - importuje data z sociálních sítí do databáze
 6. **dashboard** - v současnosti realizováno pomocí RMarkdown (předtím, než se ustálí funkcionalita, která by měla být obsažena v této části)
@@ -93,7 +93,7 @@ Sekce database nastavuje konektivitu k databázovému backendu. V současnosti j
 
 Sekce casove_limity pak specifikuje intenzitu dotazování programu vůči sociální síti. Nastavení historie_dni ovlivňuje kolik dní zpět se bude program dívat. Hodnota 1 je vhodná pro pouze testování, aby se omezil síťový mezi klientem a sociální sítí. Nastavení zpozdeni_mezi_dotazy pak nastavuje kolik sekund má klient počkat, než se znovu dotáže sociální sítě.
 
-Tato nastavení jsou důležitá pro praktické vytěžování sociální sitě, kdy lze očekávat, že sociální sít nebude možné vytěžit v jednom kroku.Klient bude tedy opakovaně oslovovat sociální síť a potřebné informace stáhne postupně. Prodloužení intervalu mezi dotazy by mělo zajistit, že sociální síť nebude přetěžovaná (což by mohlo vést k tomu, že práce klienta bude vyhodnocena např. jako útok.).
+Tato nastavení jsou důležitá pro praktické vytěžování sociální sítě, kdy lze očekávat, že sociální sít nebude možné vytěžit v jednom kroku.Klient bude tedy opakovaně oslovovat sociální síť a potřebné informace stáhne postupně. Prodloužení intervalu mezi dotazy by mělo zajistit, že sociální síť nebude přetěžovaná (což by mohlo vést k tomu, že práce klienta bude vyhodnocena např. jako útok.).
 
 **Upozornění**: V současnosti je celé řešení ve fázi ranného prototypu, který je laděn na MySQL. Kompatibilita s MariaDB je proto předpokládaná, nikoliv testovaná.
 
@@ -474,6 +474,30 @@ Celou analýzu spustíte kliknutím na tlačítko *knitt* v záhlaví okna v rá
 Nebo můžete použít interaktivní režim práce. V rámci něj postupujeme po jednotlivých blocích kódu směrem shora-dolů. Výsledky procesu pak budou viditelné přímo pod blokem kódu. Tento způsob je ideální pro ladění. Realizace změn pak může podle charakteru změny vyžadovat pouze znovu-spuštění určitého bloku kódu, nebo jeho části.
 
 *Upozornění*: vzorová analýza byla realizována na bázi testovacího souboru s jedním dnem, z tohoto důvodu grafy obsahují pouze jeden bod. V případě, že by ale data obsahovala dnů více, měly by výsledné grafy vypadat již normálně. Malý datový soubor byl zvolen pro zjednodušení testování v průběhu vývoje.
+
+## GUI - v experimentální verzi
+
+Ve verzi 0.6 byla do balíku přidáno také základní GUI pro většinu funkcionality dostupné z příkazové řádky - vlastně všechnu s výjimkou vizualizace.
+
+GUI je jednoduché, viz snímek obrazovky níže a umožňuje nastavit, jakým způsobem budou získány příspěvky. První cestou je získání příspěvků ze sociální sítě BlueSky (tedy vytěžením) na základě zadaných klíčových slov a rozsahu dat od - do. Druhou cestou je zadání cesty k JSONL souboru obsahující již dříve vytěžené příspěvky, pro které je potřeba doplnit pojmenované entity a nebo zhodnotit sentiment.
+
+Volba analytických činností je přímočará pomocí zaškrtávacích políček. Výhodou tohoto přístupu je, že v případě zaškrtnutí obou činností se uloží přímo do jediného výstupního souboru JSONL. 
+
+Pro srovnání, při použití rozhraní příkazové řádky se pro každou aktivitu vytvoří výstupní soubor.
+
+Analýza se spustí kliknutím na tlačítko "Analyzuj". 
+
+Spuštění GUI se děje pomocí příkazové řádky:
+
+```python
+python3 SfVOST-GUI.py
+```
+Další interakce s uživatelem probíhá pomocí GUI.
+
+![SfVOST GUI](./obr/GUI.png "SfVOST GUI")
+
+Upozorňuji, že implementace GUI je nutno považovat za experimentální, což znamená jednak, že může obsahovat chyby, jednak že její chování není optimální. Např.  informace o průběhu analýz, nebo toho, že funkce programu skončila s analýzou se nezobrazují v GUI, ale na příkazové řádce.
+
 ## Licence k použitým modelům
 
 Před použitím prostudujte licence k jednotlivým modelům. Dle způsobu, jakým hodláte systém nasadit, může být nutné jeden nebo více modelů nahradit jinými, které např. připouštějí Vámi plánovaný způsob nasazení.
@@ -490,6 +514,10 @@ Před použitím prostudujte licence k jednotlivým modelům. Dle způsobu, jak�
 
 ## Verze
 
+### v0.6
+
+Tato verze se zcela zaměřuje na doplnění alespoň základního rozhraní pro ovládání analytických činností pomocí GUI.
+
 ### v0.5
 
 - drobné úpravy v analýze sentimentu, přidání funkce pro vyčištění textu s cílem zvýšit výkon používaných modelů
@@ -497,11 +525,6 @@ Před použitím prostudujte licence k jednotlivým modelům. Dle způsobu, jak�
   - odebrány některé neoužívané procedury
   - lepší kontrola data od - do
 - refaktorovány skripty s cílem osamostatnit programovou logiku do samostatných tříd pro pozdější implementaci GUI
-
-### v0.4
-
-- první verze na GitHubu
-- doplněny některé infformace o licenci
 
 # Věci k dodělání
 
