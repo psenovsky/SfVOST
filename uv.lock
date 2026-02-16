@@ -542,6 +542,7 @@ dependencies = [
     { name = "pyqt6" },
     { name = "streamlit" },
     { name = "torch" },
+    { name = "tqdm" },
     { name = "transformers" },
 ]
 
@@ -555,6 +556,7 @@ requires-dist = [
     { name = "pyqt6", specifier = ">=6.10.2" },
     { name = "streamlit", specifier = ">=1.54.0" },
     { name = "torch", specifier = ">=2.10.0" },
+    { name = "tqdm", specifier = ">=4.67.3" },
     { name = "transformers", specifier = ">=5.1.0" },
 ]
 
