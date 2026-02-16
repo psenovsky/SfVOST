@@ -6,10 +6,11 @@ Autor: Pavel Šenovský
 Datum: 2025-08-11
 """
 
-import configparser                                     # práce s konfiguračními soubory typu init
+import configparser  # práce s konfiguračními soubory typu init
+import json  # zpracování JSON souborů
 import os
-import json                                             # zpracování JSON souborů
 from datetime import datetime
+
 
 def check_config_ini():
     """
@@ -22,24 +23,25 @@ def check_config_ini():
     """
     config = configparser.RawConfigParser()
     project_root = os.path.dirname(os.path.abspath(__file__))
-    config_path = os.path.join(project_root, '..', 'config.ini')
-    if not os.path.exists('config.ini'):
+    config_path = os.path.join(project_root, "..", "config.ini")
+    if not os.path.exists("config.ini"):
         return "❌ konfigurační soubor: config.ini neexistuje"
 
     error = ""
     config.read(config_path)
-    # rk = ['host', 'port', 'user', 'password', 'dbname', 'charset']
-    # error += check_config_section(config, 'database', rk)
-    rk = ['historie_dni', 'zpozdeni_mezi_dotazy']
-    error += check_config_section(config, 'casove_limity', rk)
-    rk = ['user', 'password']
-    error += check_config_section(config, 'BlueSky', rk)
-    rk = ['version']
-    error += check_config_section(config, 'general', rk)
+    rk = ["historie_dni", "zpozdeni_mezi_dotazy"]
+    error += check_config_section(config, "casove_limity", rk)
+    rk = ["user", "password"]
+    error += check_config_section(config, "BlueSky", rk)
+    rk = ["version"]
+    error += check_config_section(config, "general", rk)
+    rk = ["model", "max_tokens", "temperature", "host", "port"]
+    error += check_config_section(config, "LLM", rk)
     if error != "":
         return error
 
     return config
+
 
 def check_config_section(config, section, keys):
     """
@@ -68,6 +70,7 @@ def check_config_section(config, section, keys):
         return f"❌ V konfikuračním souboru config.ini v sekci [{section}] chybí: {', '.join(missing_keys)}"
     return ""
 
+
 def is_valid_date(date_string):
     """
     Zkontroluje, zda řetězec je datum ve formátu YYYY-MM-DD.
@@ -82,10 +85,11 @@ def is_valid_date(date_string):
     True pokud je formát data validní, jinak vrací false.
     """
     try:
-        datetime.strptime(date_string, '%Y-%m-%d')
+        datetime.strptime(date_string, "%Y-%m-%d")
         return True
     except ValueError:
         return False
+
 
 def uloz_json(cesta, data):
     """
