@@ -512,7 +512,36 @@ Před použitím prostudujte licence k jednotlivým modelům. Dle způsobu, jak�
 
 (Každý z modelů je licencován samostatně.)
 
+## SfVOST_LLM
+
+Ve verzi 0.7 byl doplněn samostatný modul pro analýzu příspěvků pomocí lokálně věžících modelů jako je openai/gpt-oss-20b. Zprovoznění vyžaduje instalaci a konfiguraci prostředí pro provoz LLM jako LM-Studio nebo Ollama (a další) a nahrání vhodného modelu pro analýzu příspěvků.
+
+Model je potřeba konfigurovat v config.ini a nastavit tak, aby program věděl, kde je API k modelu dostupné.
+
+SfVOST_LLM je z pohleu vyhodnocování efektivnější, protože vyhodnocení se děje v jediném kroku. Původní (stále dostupné modely) používaly specializovaný model pro vyhodnocení např. sentimentu nebo NER, ale nikoliv obojího. Dále byl často vyžadován samostatný model pro jazyky. Při použití obecněji řešených LLM toto odpadá a celou analýzu příspěvku je možno vyřešit jedním promptem a to včetně různých jazyků (navíc je podporován základní překlad) a dezinformací.
+
+Vývoj a testování bylo provedeno na modelu s otevřenými vahami openai/gpt-oss-20b. Prgram může ale funkgovat také s jinými modely, ale je na uživateli, aby model pro zvolený účel otestoval.
+
+V současnosti je možno použít program pouze z příkazové řásky. Jeho vstupem je JSONL sobor s příspěvky ze sítě BlueSky, který je potřeba vytěžit pomocí SocNetwork.py. Výstupem se pak ukládá do jiného souboru.
+
+Z hlediska analýz je v současnosti podporován:
+- sentiment
+- NER
+- dezinformace
+- překlad do češtiny - podpora jazyků v tomto případě přímo závisí na zvoleném LLM modelu.
+
+```bash
+uv run SocNetwork.py -p data/post.jsonl -k data/keywords.csv -od 2025-04-30 -do 2025-05-31
+uv run SfVOST_LLM.py -p data/post.jsonl -o data/vystupy.jsonl
+```
+
 ## Verze
+
+### v0.7
+
+- doplnění modulu pro analýzu příspěvků pomocí lokálně věžících modelů jako je openai/gpt-oss-20b
+- modul kromě NER, analýzy sentimentu umožňuje klasifikovat dezinformace a překládat příspěvky v cizích jazycích do češtiny 
+- projekt migrován na balíčkovací systém uv
 
 ### v0.6
 
