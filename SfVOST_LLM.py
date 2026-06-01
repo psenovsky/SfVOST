@@ -57,7 +57,7 @@ def check_config():
     """
     global sen, conf, postPath, postsOutPath
     # zpracování argumentů příkazové řádky
-    description = "Program analysuje příspěvky ze sociálních sítí poskytnuté v JSONL souboru a odvodí NER, sentiment, překlad a dezinformace."
+    description = "Program analyzuje příspěvky ze sociálních sítí poskytnuté v JSONL souboru a odvodí NER, sentiment, překlad a dezinformace."
     parser = argparse.ArgumentParser(
         prog="SfVOST_LLM.py",
         description=description,
@@ -123,6 +123,7 @@ def LLM(postsPath, postsOutPath):
         lang_nazev = get_language_name(lang)
         post = data["record"]["text"]
         prompt = f"""Jsi expert na analýzu textu a lingvistiku. Tvým úkolem je analyzovat a přeložit příspěvek ze sociální sítě BlueSky.
+        
         Příspěvek je v jazyce: {lang_nazev}.
 
         Vrať výsledek VŽDY jako validní JSON s následující strukturou:
