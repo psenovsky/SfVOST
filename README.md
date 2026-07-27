@@ -40,32 +40,50 @@ Základní představu o architektuře je možno si udělat z obr. níže.
 
 ### Technické požadavky:
 
-- Python 3.13 nebo novější s pip a knihovnami (seznam v requirements.txt)
+- Python 3.14 nebo novější
+- [uv](https://docs.astral.sh/uv/) - manažer balíčků a virtuálních prostředí
 - MySQL/MariaDB databázový server <- databázová funkcionalita v současnosti není implementována)
 - R a RStuido pro funkcionalitu vizualizace výsledků
 - Připojení k internetu pro komunikaci s API sociální sítě BlueSky a také stahování předtrénovaných AI modelů
 
-### Potřebné knihovny
+### Instalace pomocí uv
 
-Dle používaného prostředí, lze knihovny instalovat buďto globálně. V obecné rovině se to ale z hlediska schopnosti provozovat různé Python aplikace s odlišnými závislostmi nedoporučuje.
+Projekt využívá manažer balíčků [uv](https://docs.astral.sh/uv/), který zajišťuje správu virtuálního prostředí i závislostí. Instalace uv je popsána v [oficiální dokumentaci](https://docs.astral.sh/uv/getting-started/installation/).
 
-```bash
-pip install -r requirements.txt
-```
-
-nebo vytvořit virtuální prostředí pouze pro tuto aplikaci. Vytvoření virtuálního prostředí je doporučovaným postupem. Veškeré závislosti projektu se v tomto případě konsoludují na jedno místo a to konkrétně složku .env v rootu projektu a to včetně verze Python, Pip i jednotlivých knihovat.
-
-Prostředí je potřeba nainstalovat a aktivovat před použitím aplikace.
+Pro inicializaci projektu postupujte takto:
 
 ```bash
-python3 -m venv ../.env # nastavit nové prostředí .env v rootu projektu
-source ../.env/bin/activate # aktivovat toto prostředí
-python3 -m pip install -r requirements.txt # instalovat závislosti shromážděné v souboru requirements.txt
+# ve složce pro projekt
+git clone <url-repozitare>
+uv sync
 ```
 
-Soubor requirements.txt je dostupný ve složce /bin.
+Příkaz `uv sync` automaticky vytvoří virtuální prostředí v adresáři `.venv/`, nainstaluje správnou verzi Pythonu (dle souboru `.python-version`) a nainstaluje všechny závislosti definované v `pyproject.toml`.
 
-*Upozornění:* v jednu chvíli na počítači může být aktivní pouze jedno virtuální prostředí. V případě, že by na daném stroji byl vyžadován souběžný běh takových prostředí, nelze tento způsob použít. K řešení by bylo potřeba použít jiný způsob, např. kontejnerizace prostředí pomocí technologie Docker.
+Pro spouštění jednotlivých skriptů používejte příkaz `uv run`:
+
+```bash
+uv run python SocNetwork.py -p data/post.jsonl -k data/keywords.csv
+uv run python sentiment-cli.py -p data/post.jsonl -s data/sentiment.jsonl
+```
+
+### Závislosti projektu
+
+Závislosti jsou definovány v souboru `pyproject.toml` a zahrnují:
+
+| Balíček        | Verze    | Účel                                                                      |
+| -------------- | -------- | ------------------------------------------------------------------------- |
+| atproto        | >=0.0.65 | Klient pro komunikaci s API sociální sítě BlueSky                         |
+| langdetect     | >=1.0.9  | Detekce jazyka textu                                                      |
+| pandas         | >=2.3.3  | Prace s tabulárními daty (např. načtení slovníku jazyků)                  |
+| plotly         | >=6.5.2  | Vizualizace dat                                                           |
+| pydantic       | >=2.11.0 | Validace a serializace datových struktur (příspěvky, výsledky analýz)     |
+| pymysql        | >=1.1.2  | Klient pro připojení k MySQL/MariaDB databázi                             |
+| pyqt6          | >=6.10.2 | GUI rozhraní aplikace                                                     |
+| streamlit      | >=1.54.0 | Webové rozhraní pro vizualizaci                                           |
+| torch          | >=2.10.0 | Framework pro strojové učení (základ pro modely NER a sentimentu)          |
+| tqdm           | >=4.67.3 | Zobrazení průběhu zpracování                                              |
+| transformers   | >=5.1.0  | Knihovna pro práci s modely NLP (BERT, Czert-B, BART)                    |
 
 ## Konfigurace a nastavení
 
@@ -537,6 +555,13 @@ uv run SfVOST_LLM.py -p data/post.jsonl -o data/vystupy.jsonl
 
 ## Verze
 
+### v0.8
+
+- implementována hierarchie tříd pro příspěvky ze sociálních sítí pomocí pydantic
+- přidán modul `src/models.py` s definicemi datových struktur pro příspěvky a výsledky analýz
+- refaktoring analytických modulů (ner, sentiment, LLM) pro použití pydantic modelů
+- migrace na balíčkovací systém uv (nahrazení pip + requirements.txt)
+
 ### v0.7
 
 - doplnění modulu pro analýzu příspěvků pomocí lokálně věžících modelů jako je openai/gpt-oss-20b
@@ -558,8 +583,7 @@ Tato verze se zcela zaměřuje na doplnění alespoň základního rozhraní pro
 # Věci k dodělání
 
 - integrující skript který na jeden příkaz zrealizuje vše
-- GUI program pro zastřešení celého projektu
 - implementace dashboard
-- odlišná implementace datových struktur, např. pomocí Parquet (pokud by se uvažovalo o zpracovávání opravdu velkých objemů dat)
-
-... ne nutně ve výše uvedeném pořadí.
+- přechod na formát Apache Arrow pro analytické výstupy
+- optimalizace LLM analýzy (batch processing)
+- implementace spaCy frameworku pro NER
