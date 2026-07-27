@@ -27,8 +27,9 @@ Nový prototyp je založen na následujících modulech:
 2. **skórování sentimentu (sentiment-cli.py)** - odhad sentimentu příspěvků na základě metod strojového učení
 3. **detekce pojmenovaných entit (ner-cli.py)** - detekce pojmenovaných entit v textu příspěvků
 4. **detekce potenciálních dezinformací (dezinformace.py)** - detekce potenciálních dezinformací příspěvků na základě metod strojového učení
-5. **(plán) import dat do DB (DBPush.py)** - importuje data z sociálních sítí do databáze
-6. **dashboard** - v současnosti realizováno pomocí RMarkdown (předtím, než se ustálí funkcionalita, která by měla být obsažena v této části)
+5. **export do Parquet (export-cli.py)** - konverze příspěvků z formátu JSONL do formátu Parquet (Apache Arrow) pro analytické účely
+6. **(plán) import dat do DB (DBPush.py)** - importuje data z sociálních sítí do databáze
+7. **dashboard** - v současnosti realizováno pomocí RMarkdown (předtím, než se ustálí funkcionalita, která by měla být obsažena v této části)
 
 V budoucnu je pak plánováno přidání další vrstvy aplikace, která by měla umožnit jednodušší orchestraci ovládání jednotlivých modulů pomocí uživatelsky přívětivého rozhraní.
 
@@ -78,6 +79,7 @@ Závislosti jsou definovány v souboru `pyproject.toml` a zahrnují:
 | pandas         | >=2.3.3  | Prace s tabulárními daty (např. načtení slovníku jazyků)                  |
 | plotly         | >=6.5.2  | Vizualizace dat                                                           |
 | pydantic       | >=2.11.0 | Validace a serializace datových struktur (příspěvky, výsledky analýz)     |
+| pyarrow        | >=20.0.0 | Podpora Apache Arrow/Parquet formátu pro analytické účely                |
 | pymysql        | >=1.1.2  | Klient pro připojení k MySQL/MariaDB databázi                             |
 | pyqt6          | >=6.10.2 | GUI rozhraní aplikace                                                     |
 | streamlit      | >=1.54.0 | Webové rozhraní pro vizualizaci                                           |
@@ -130,7 +132,7 @@ Parametr prah_jistoty definuje prahovou hodnotu pro vyhodnocení dezinformace. J
 ### Použití
 
 ```bash
-python SocNetwork.py [-h] -p <souborJSONL> -k <souborCSV> [-l <lang>] [-od <datum>] [-do <datum>]
+uv run SocNetwork.py [-h] -p <souborJSONL> -k <souborCSV> [-l <lang>] [-od <datum>] [-do <datum>]
 ```
 
 Parametry:
@@ -164,20 +166,20 @@ Parametr -l je nepovinný pro výběr příspěvků v určitém konkrétním jaz
 Příklady použití:
 
 ```bash
-python SocNetwork.py -p data/post.jsonl -k data/keywords.csv
+uv run SocNetwork.py -p data/post.jsonl -k data/keywords.csv
 ```
 Provede vyhledání příspěvků v češtině od včerejška do dneška (historie_dni = 1). Výsledky uloží do souboru data/post.jsonl. Vyhledá klíčová slova načtená ze souboru data/keywords.csv.
 
 Následující příklad vyhledá příspěvky v češtině za měsíc kveten 2025:
 
 ```bash
-python SocNetwork.py -p data/post.jsonl -k data/keywords.csv -od 2025-04-30 -do 2025-05-31
+uv run SocNetwork.py -p data/post.jsonl -k data/keywords.csv -od 2025-04-30 -do 2025-05-31
 ```
 
 Stejný dotaz ale s příspěvky v angličtině a češtině:
 
 ```bash
-python SocNetwork.py -p data/post.jsonl -k data/keywords.csv -l "en, cs" -od 2025-04-30 -do 2025-05-31
+uv run SocNetwork.py -p data/post.jsonl -k data/keywords.csv -l "en, cs" -od 2025-04-30 -do 2025-05-31
 ```
 
 *Upozornění pro soubor s příspěvky* (JSON). Tento soubor pokud neexistuje bude vytvořen, pokud existuje, bude přepsán.
@@ -265,7 +267,7 @@ Tento skript provede analýzu příspěvků ze sítě BlueSky uložených ve for
 použití:
 
 ```bash
-python sentiment-cli.py -p <souborJSONL> -s <souborJSONL>
+uv run sentiment-cli.py -p <souborJSONL> -s <souborJSONL>
 ```
 
 Parametry:
@@ -276,7 +278,7 @@ Parametry:
 příklad použití:
 
 ```bash
-python sentiment-cli.py -p data/post.jsonl -s data/sentiment.jsonl
+uv run sentiment-cli.py -p data/post.jsonl -s data/sentiment.jsonl
 ```
 
 Spočítá sentiment příspěvků uloženým v souboru data/post.jsonl a výsledek uloží do souboru data/sentiment.jsonl.
@@ -337,7 +339,7 @@ Skripty ner-cli.py a sentiment.py tedy pouze doplňují informace k příspěvk�
 Použití:
 
 ```bash
-python ner-cli.py -p data/post.jsonl -n data/ner.jsonl
+uv run ner-cli.py -p data/post.jsonl -n data/ner.jsonl
 ```
 
 Parametry:
@@ -397,7 +399,7 @@ Podobně jako u hodnocení sentimentu a NER tento skript přidává informace do
 Použití:
 
 ```bash
-python dezinformace.py -p <souborJSONL> -d <souborJSONL>
+uv run dezinformace.py -p <souborJSONL> -d <souborJSONL>
 ```
 
 Parametry:
@@ -431,6 +433,37 @@ Z hlediska nasazení vždy začínáme těžením příspěvků pomocí SocNetwo
 - ner-cli.py - detekce pojmenovaných entit
 - sentiment.py - detekce sentimentu
 - dezinformace.py - detekce fake news (s velkou řadou omezení)
+
+a následně export do Parquet pro analytické účely:
+- export-cli.py - konverze JSONL do Parquet
+
+### Export do Parquet (export-cli.py)
+
+Po provedení případných analýz (NER, sentiment, dezinformace) je možné příspěvky exportovat do Parquet formátu. Parquet je sloupcový formát optimalizovaný pro analytické účely, který je mnohem rychlejší a kompaktnější než JSONL. V R je možno Parquet soubory načítat pomocí balíku `arrow`.
+
+```bash
+uv run export-cli.py -i <souborJSONL> -o <souborParquet>
+```
+
+Parametry:
+- -h, --help  - zobrazí nápovědu a skončí
+- -i, --input souborJSONL - vstupní soubor JSONL s příspěvky
+- -o, --output souborParquet - výstupní soubor Parquet
+
+Příklad použití:
+
+```bash
+uv run export-cli.py -i data/postFiala_ner.json -o data/postFiala_ner.parquet
+```
+
+Převede příspěvky z JSONL souboru do Parquet souboru. Struktura Parquet tabulky obsahuje ploché sloupce pro základní atributy (uri, text, autor, počty interakcí) a analytické výsledky (sentiment, dezinformace). Komplexnější struktury jako NER, facets nebo embed jsou serializovány jako JSON stringy.
+
+Načtení Parquet souboru v R:
+
+```r
+library(arrow)
+data <- read_parquet("data/postFiala_ner.parquet")
+```
 
 jednak ve smyslu další práce s takto shromážděnými informacemi. JSONL je formát, který je dobře znám a je velmi dobře strojově zpracovatelný pomocí nástrojů jako je R, PowerBI, různé nástroje statistické analýzy, nebo další Python skripty.
 
@@ -555,6 +588,13 @@ uv run SfVOST_LLM.py -p data/post.jsonl -o data/vystupy.jsonl
 
 ## Verze
 
+### v0.9
+
+- přidána podpora Apache Arrow/Parquet formátu pro analytické výstupy
+- nový modul `export-cli.py` pro konverzi JSONL → Parquet
+- přidány funkce `uloz_prispevky_do_parquet()`, `nacti_prispevky_z_parquet()`, `prispevky_na_flat_row()` do `src/models.py`
+- aktualizována šablona `vost_template.Rmd` o podporu načítání Parquet souborů
+
 ### v0.8
 
 - implementována hierarchie tříd pro příspěvky ze sociálních sítí pomocí pydantic
@@ -584,6 +624,6 @@ Tato verze se zcela zaměřuje na doplnění alespoň základního rozhraní pro
 
 - integrující skript který na jeden příkaz zrealizuje vše
 - implementace dashboard
-- přechod na formát Apache Arrow pro analytické výstupy
+- ~~přechod na formát Apache Arrow pro analytické výstupy~~ (hotovo v0.9)
 - optimalizace LLM analýzy (batch processing)
 - implementace spaCy frameworku pro NER

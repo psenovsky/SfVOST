@@ -356,3 +356,187 @@ def uloz_prispevky_do_jsonl(prispevky: list[Post], cesta: str) -> None:
             f.write(post.model_dump_json())
             f.write("\n")
     print(f"✅ ... uloženo {len(prispevky)} příspěvků do souboru {cesta}")
+
+
+# =============================================================================
+# Pomocné funkce pro práci s Apache Arrow / Parquet
+# =============================================================================
+
+def prispevky_na_flat_row(post: Post) -> dict:
+    """
+    Převede instanci Post na plochý slovník vhodný pro řádek Parquet tabulky.
+
+    Komplexní zanořené struktury (NER, facets, embed) jsou serializovány jako JSON string.
+    Analytické výsledky (sentiment, dezinformace) jsou rozloženy do samostatných sloupců.
+
+    Parametry:
+    ----------
+    post : Post
+        Instance příspěvku ze sítě BlueSky.
+
+    Vrací:
+    ------
+    dict
+        Plochý slovník s daty příspěvku.
+    """
+    sentiment = getattr(post, 'sentiment', None)
+    dezinformace = getattr(post, 'dezinformace', None)
+    ner = getattr(post, 'ner', None)
+
+    row = {
+        "uri": post.uri,
+        "cid": post.cid,
+        "indexed_at": post.indexed_at,
+        "record_created_at": post.record.created_at,
+        "record_text": post.record.text,
+        "record_lang": post.record.langs[0] if post.record.langs else None,
+        "author_handle": post.author.handle,
+        "author_did": post.author.did,
+        "author_display_name": post.author.display_name,
+        "like_count": post.like_count,
+        "quote_count": post.quote_count,
+        "reply_count": post.reply_count,
+        "repost_count": post.repost_count,
+        "sentiment_kategorie": sentiment.get("sentiment") if isinstance(sentiment, dict) else None,
+        "sentiment_skore": sentiment.get("score") if isinstance(sentiment, dict) else None,
+        "dezinformace_label": dezinformace.get("label") if isinstance(dezinformace, dict) else None,
+        "dezinformace_skore": dezinformace.get("score") if isinstance(dezinformace, dict) else None,
+        "ner": json.dumps(ner, ensure_ascii=False) if ner else None,
+        "record_facets": json.dumps([f.model_dump() for f in post.record.facets], ensure_ascii=False) if post.record.facets else None,
+        "record_tags": json.dumps(post.record.tags, ensure_ascii=False) if post.record.tags else None,
+        "record_labels": json.dumps([l.model_dump() for l in post.record.labels], ensure_ascii=False) if post.record.labels else None,
+        "embed": json.dumps(post.embed, ensure_ascii=False, default=str) if post.embed else None,
+        "record_reply_parent_uri": post.record.reply.parent.uri if post.record.reply and post.record.reply.parent else None,
+        "record_reply_root_uri": post.record.reply.root.uri if post.record.reply and post.record.reply.root else None,
+    }
+    return row
+
+
+def uloz_prispevky_do_parquet(prispevky: list[Post], cesta: str) -> None:
+    """
+    Uloží příspěvky do Parquet souboru.
+
+    Příspěvky jsou nejprve převedeny na ploché řádky a poté zapsány jako Parquet tabulka.
+
+    Parametry:
+    ----------
+    prispevky : list[Post]
+        Seznam příspěvků k uložení.
+    cesta : str
+        Cesta k výstupnímu souboru Parquet.
+    """
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    radky = [prispevky_na_flat_row(p) for p in prispevky]
+    table = pa.Table.from_pylist(radky)
+    pq.write_table(table, cesta)
+    print(f"✅ ... uloženo {len(prispevky)} příspěvků do souboru {cesta}")
+
+
+def nacti_prispevky_z_parquet(cesta: str) -> list[Post]:
+    """
+    Načte příspěvky z Parquet souboru.
+
+    Parametry:
+    ----------
+    cesta : str
+        Cesta k souboru Parquet s příspěvky.
+
+    Vrací:
+    ------
+    list[Post]
+        Seznam načtených příspěvků.
+    """
+    import pyarrow.parquet as pq
+
+    table = pq.read_table(cesta)
+    prispevky = []
+    for radok in table.to_pylist():
+        prispevky.append(_flat_row_na_post(radok))
+    print(f"✅ ... načteno {len(prispevky)} příspěvků z souboru {cesta}")
+    return prispevky
+
+
+def _flat_row_na_post(radok: dict) -> Post:
+    """
+    Převede plochý slovník (řádek Parquet tabulky) zpět na instanci Post.
+
+    Parametry:
+    ----------
+    radok : dict
+        Plochý slovník s daty příspěvku.
+
+    Vrací:
+    ------
+    Post
+        Instance příspěvku.
+    """
+    author = Author(
+        did=radok["author_did"],
+        handle=radok["author_handle"],
+        display_name=radok.get("author_display_name"),
+    )
+
+    reply = None
+    if radok.get("record_reply_parent_uri") or radok.get("record_reply_root_uri"):
+        reply = Reply(
+            parent=ReplyRef(cid="", uri=radok["record_reply_parent_uri"]) if radok.get("record_reply_parent_uri") else None,
+            root=ReplyRef(cid="", uri=radok["record_reply_root_uri"]) if radok.get("record_reply_root_uri") else None,
+        )
+
+    facets = None
+    if radok.get("record_facets"):
+        try:
+            facets = json.loads(radok["record_facets"])
+        except (json.JSONDecodeError, TypeError):
+            facets = None
+
+    tags = None
+    if radok.get("record_tags"):
+        try:
+            tags = json.loads(radok["record_tags"])
+        except (json.JSONDecodeError, TypeError):
+            tags = None
+
+    record = Record(
+        created_at=radok["record_created_at"],
+        text=radok["record_text"],
+        langs=[radok["record_lang"]] if radok.get("record_lang") else [],
+        facets=facets,
+        tags=tags,
+        reply=reply,
+    )
+
+    post = Post(
+        author=author,
+        cid=radok["cid"],
+        indexed_at=radok["indexed_at"],
+        record=record,
+        uri=radok["uri"],
+        like_count=radok.get("like_count", 0),
+        quote_count=radok.get("quote_count", 0),
+        reply_count=radok.get("reply_count", 0),
+        repost_count=radok.get("repost_count", 0),
+    )
+
+    if radok.get("ner"):
+        try:
+            post.ner = json.loads(radok["ner"])
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    if radok.get("sentiment_kategorie"):
+        post.sentiment = {
+            "sentiment": radok["sentiment_kategorie"],
+            "score": radok.get("sentiment_skore"),
+            "label": radok["sentiment_kategorie"],
+        }
+
+    if radok.get("dezinformace_label"):
+        post.dezinformace = {
+            "label": radok["dezinformace_label"],
+            "score": radok.get("dezinformace_skore"),
+        }
+
+    return post

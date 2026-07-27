@@ -8,7 +8,7 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 # analýza potřebných analytických balíků - chybějící doinstalovat
-packages <- c("tidyverse", "plotly", "jsonlite", "wordcloud2")
+packages <- c("tidyverse", "plotly", "jsonlite", "wordcloud2", "arrow")
 install.packages(setdiff(packages, rownames(installed.packages())))  
 
 # pčipojit potřebné knihovny
@@ -20,6 +20,7 @@ library(lubridate)
 library(tidyr)
 library(purrr)
 library(wordcloud2)
+library(arrow)
 ```
 
 ## Nastavení
@@ -28,6 +29,25 @@ V následujícím bloku kódu jsou realizovaný nastavení, která je potřeba z
 
 ```{r mastavení}
 soubor <- "postIran_dezinfor.json"
+# Pro Parquet soubor použijte:
+# soubor <- "postIran_dezinfor.parquet"
+```
+
+## Načtení dat
+
+Data je možno načíst buďto z JSONL souboru ( pomocí `jsonlite` ) nebo z Parquet souboru ( pomocí `arrow` ). Parquet je preferovaný formát pro analytické účely díky rychlejšímu načítání a menší velikosti souborů.
+
+```{r načtení souboru - JSON}
+data <- stream_in(file(soubor), pagesize = 10000) %>%
+  mutate(indexed_at = ymd_hms(indexed_at),
+         ID = row_number())
+```
+
+```{r načtení souboru - Parquet, eval=FALSE}
+# Pro načtení Parquet souboru místo JSON použijte:
+# data <- read_parquet("postIran_dezinfor.parquet") %>%
+#   mutate(indexed_at = ymd_hms(indexed_at),
+#          ID = row_number())
 ```
 
 ## Analytika
