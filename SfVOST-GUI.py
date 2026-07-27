@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
 from src.BlueSky import BlueSky
 from src.ner import ner
 from src.sentiment import sentiment
+from src.llm import llm
 from src.models import uloz_prispevky_do_parquet, uloz_prispevky_do_jsonl
 
 import sys
@@ -63,10 +64,14 @@ class DataForm(QWidget):
 
         # Analýzy
         layout.addWidget(QLabel("Realizovat analýzy"))
+        self.llm_checkbox = QCheckBox("LLM analýza (překlad, NER, sentiment, dezinformace)")
         self.ner_checkbox = QCheckBox("pojmenované entity (NER)")
         self.sentiment_checkbox = QCheckBox("sentiment")
+        layout.addWidget(self.llm_checkbox)
         layout.addWidget(self.ner_checkbox)
         layout.addWidget(self.sentiment_checkbox)
+
+        self.llm_checkbox.toggled.connect(self.toggle_analyzy)
 
         # Uložení výsledků
         layout.addWidget(QLabel("Uložit výsledky analýzy do souboru (JSONL/Parquet)"))
@@ -106,6 +111,17 @@ class DataForm(QWidget):
             self.file_input.setEnabled(True)
             self.file_button.setEnabled(True)
 
+    def toggle_analyzy(self):
+        """
+        událost změna výběru analýzy - pokud je LLM zaškrtnutý, lokální NER a sentiment se zakážou
+        """
+        if self.llm_checkbox.isChecked():
+            self.ner_checkbox.setEnabled(False)
+            self.sentiment_checkbox.setEnabled(False)
+        else:
+            self.ner_checkbox.setEnabled(True)
+            self.sentiment_checkbox.setEnabled(True)
+
     def select_file(self):
         """
         událost po na tlačítko "..." v poli pro nastavení cesty k souboru ze kterého se budou načítat příspěvky k analýze
@@ -129,14 +145,11 @@ class DataForm(QWidget):
         # kontrola vyplnění parametrů
         error = ""
         prispevky = ""
-        nr = None
-        sen = None
-        if not self.ner_checkbox.isChecked() and not self.sentiment_checkbox.isChecked():
-            error += "- Vyberte alespoň jednu metod analýzy\n"
+        if not self.llm_checkbox.isChecked() and not self.ner_checkbox.isChecked() and not self.sentiment_checkbox.isChecked():
+            error += "- Vyberte alespoň jednu metodu analýzy\n"
         if self.save_input.text() == "":
             error += "- není jasné kam s výsledky analýzy\n"
         if self.radio_bluesky.isChecked():
-            # implementovat kontrolu parametrů pro BlueSky
             if self.keywords_input.text() == "":
                 error += "- Zadejte klíčová slova\n"
             if self.date_from.date() == "":
@@ -148,27 +161,35 @@ class DataForm(QWidget):
                 return
             bs = BlueSky(postJSONL = "", keywords = self.keywords_input.text(), since = self.date_from.date(), until = self.date_to.date())
             prispevky = bs.prispevky
-            if self.ner_checkbox.isChecked():
-                nr = ner(postsPath = "", nerJSONL = "", postsJSONL = prispevky)
-                prispevky = nr.ner
-            if self.sentiment_checkbox.isChecked():
-                sen = sentiment(cestaJSON = "", cestaExport = "", postsJSONL = prispevky)
-                prispevky = sen.sentiment
+            if self.llm_checkbox.isChecked():
+                l = llm(postsPath = "", postsJSONL = prispevky)
+                prispevky = l.llm
+            else:
+                if self.ner_checkbox.isChecked():
+                    nr = ner(postsPath = "", nerJSONL = "", postsJSONL = prispevky)
+                    prispevky = nr.ner
+                if self.sentiment_checkbox.isChecked():
+                    sen = sentiment(cestaJSON = "", cestaExport = "", postsJSONL = prispevky)
+                    prispevky = sen.sentiment
         elif self.radio_json.isChecked():
             if self.file_input.text() == "":
-                error += "Zadejte soubor ze kterého se budou načítat příspěvky k analýze\n"
+                error += "- Zadejte soubor ze kterého se budou načítat příspěvky k analýze\n"
             if error != "":
                 QMessageBox.warning(self, "Chyba", error)
                 return
-            if self.ner_checkbox.isChecked():
-                nr = ner(postsPath = self.file_input.text(), nerJSONL = "", postsJSONL = "")
-                prispevky = nr.ner
-            if self.sentiment_checkbox.isChecked() and prispevky == "":
-                sen = sentiment(cestaJSON = self.file_input.text(), cestaExport = "", postsJSONL = "")
-                prispevky = sen.sentiment
-            elif self.sentiment_checkbox.isChecked() and prispevky != "":
-                sen = sentiment(cestaJSON = "", cestaExport = "", postsJSONL = prispevky)
-                prispevky = sen.sentiment
+            if self.llm_checkbox.isChecked():
+                l = llm(postsPath = self.file_input.text(), postsJSONL = "")
+                prispevky = l.llm
+            else:
+                if self.ner_checkbox.isChecked():
+                    nr = ner(postsPath = self.file_input.text(), nerJSONL = "", postsJSONL = "")
+                    prispevky = nr.ner
+                if self.sentiment_checkbox.isChecked() and prispevky == "":
+                    sen = sentiment(cestaJSON = self.file_input.text(), cestaExport = "", postsJSONL = "")
+                    prispevky = sen.sentiment
+                elif self.sentiment_checkbox.isChecked() and prispevky != "":
+                    sen = sentiment(cestaJSON = "", cestaExport = "", postsJSONL = prispevky)
+                    prispevky = sen.sentiment
 
         cesta = self.save_input.text()
         if cesta.endswith(".parquet"):

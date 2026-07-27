@@ -35,7 +35,7 @@ def check_config_ini():
     error += check_config_section(config, "BlueSky", rk)
     rk = ["version"]
     error += check_config_section(config, "general", rk)
-    rk = ["model", "max_tokens", "temperature", "host", "port"]
+    rk = ["model", "max_tokens", "temperature", "host", "port", "batch_size"]
     error += check_config_section(config, "LLM", rk)
     if error != "":
         return error

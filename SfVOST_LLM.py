@@ -9,6 +9,7 @@ Soubor vygeneruje:
 - dezinformace příspěvku
 
 K vyhodnocení se používá lokální LLM provozovaný pomocí LM-Studio nebo Ollama.
+Příspěvky se zpracovávají dávkově (batch processing) pro efektivnější využití LLM.
 
 použití:
 --------
@@ -18,7 +19,7 @@ Parametry:
 ----------
 - -h, --help  - zobrazí nápovědu a skončí
 - -p, --postJSON souborJSONL - soubor JSON s příspěvky
-- -s, --sentiment souborJSONL - soubor JSON s výstupy analýzy
+- -o, --out souborJSONL - soubor JSON s výstupy analýzy
 
 Autor: Pavel Šenovský
 Datum: 2026-02-16
@@ -27,14 +28,9 @@ Datum: 2026-02-16
 import argparse  # argumenty příkazového řádku
 import json  # JSON parsing
 import os
-import re  # regular expressions
 import urllib.request  # make HTTP requests
-from multiprocessing import Condition
 
 import pandas as pd
-from numpy import ulong
-from torch.fx.experimental.proxy_tensor import prim
-from torch.utils.checkpoint import NoDefault
 from tqdm import tqdm  # progress bar
 
 from src.utils import (
@@ -46,17 +42,18 @@ from src.models import Post, nacti_prispevky_z_jsonl, uloz_prispevky_do_jsonl
 # iniciace globálních proměnných
 out = None  # výstup modelu
 conf = None  # konfigurační soubor
-postPath = ""  # cesta k souboru s příspěvky
+postsPath = ""  # cesta k souboru s příspěvky
 postsOutPath = ""  # cesta k souboru s výstupem
-postsJSONL = None  # načtené příspěvky
 language_map = None  # slovník s jazyky
+
+MAX_RETRY = 3  # maximální počet opakování při selhání dávky
 
 
 def check_config():
     """
     Provede kontrolu integrity konfiguračního souboru a nastavení odvozená z parametrů přikazové řádky a připraví konfigurační slovník pro další použití v aplikaci.
     """
-    global sen, conf, postPath, postsOutPath
+    global conf, postsPath, postsOutPath
     # zpracování argumentů příkazové řádky
     description = "Program analyzuje příspěvky ze sociálních sítí poskytnuté v JSONL souboru a odvodí NER, sentiment, překlad a dezinformace."
     parser = argparse.ArgumentParser(
@@ -71,28 +68,24 @@ def check_config():
         parser.print_help()
         exit()
 
-    # try:
     if not os.path.exists(args.postJSON):
         print(f"❌ Soubor s příspěvky {args.postJSON} neexistuje")
         exit()
 
     conf = check_config_ini()
-    # project_root = os.path.dirname(os.path.abspath(__file__))
-    # postsPath = os.path.join(project_root, "..", args.postJSON)
-    # postsOutPath = os.path.join(project_root, "..", args.out)
     postsPath = args.postJSON
     postsOutPath = args.out
-    print(f"✅ ... dokončení inicializace")  # DEBUG
+    print(f"✅ ... dokončení inicializace")
     LLM(postsPath, postsOutPath)
-    # except Exception as e:
-    #    print(f"❌ Chyba při inicializaci: {e}")
-    #    print(f"Detaily výjimky: {str(e)}")
-    #    exit()
 
 
 def LLM(postsPath, postsOutPath):
     """
-    provede načtení příspěvků ze souboru a jejich zpracování pomocí LLM
+    Provede načtení příspěvků ze souboru a jejich zpracování pomocí LLM v dávkách.
+
+    Příspěvky se rozdělí na dávky podle konfigurace batch_size.
+    Každá dávka se odešle jako jeden požadavek na LLM, který vrátí JSON pole
+    s výsledky pro všechny příspěvky v dávce.
 
     Parametry:
     ----------
@@ -103,83 +96,155 @@ def LLM(postsPath, postsOutPath):
     ------
     None
     """
-    global postsJSONL, conf
-    obsah = []
+    global conf
 
     prispevky = nacti_prispevky_z_jsonl(postsPath)
+    batch_size = int(conf["LLM"]["batch_size"])
+    ip = conf["LLM"]["host"]
+    port = conf["LLM"]["port"]
+    url = f"http://{ip}:{port}/v1/chat/completions"
 
-    msg = ""
-    # for line in postsJSONL:
-    prispevky_zpracovano = 0
-    for post in tqdm(prispevky, desc="Zpracování příspěvků", unit="příspěvek"):
-        lang = post.record.langs[0]  # první jazyk v příspevku
-        lang_nazev = get_language_name(lang)
-        text_prispevku = post.record.text
-        prompt = f"""Jsi expert na analýzu textu a lingvistiku. Tvým úkolem je analyzovat a přeložit příspěvek ze sociální sítě BlueSky.
-        
-        Příspěvek je v jazyce: {lang_nazev}.
+    # rozdělení příspěvků na dávky
+    dávky = [prispevky[i:i + batch_size] for i in range(0, len(prispevky), batch_size)]
+    zpracováno = 0
 
-        Vrať výsledek VŽDY jako validní JSON s následující strukturou:
-        {{
-          "preklad": "Text přeložený do češtiny. Pokud je originál v češtině, vrať jej beze změny.",
-          "ner": {{
-            "PER": ["seznam osob"],
-            "ORG": ["seznam organizací"],
-            "LOC": ["seznam lokalit"],
-            "GPE": ["seznam geopolitických entit"],
-            "DATE": ["seznam dat"],
-            "FAC": ["seznam zařízení/staveb"]
-          }},
-          "sentiment": "pozitivní | neutrální | negativní",
-          "dezinformace": "ano | ne"
-        }}
-
-        Pravidla pro zpracování:
-        1. NER: Pokud v textu žádná entita daného typu není, vrať prázdný seznam [].
-        2. Sentiment: Vyber pouze jednu z nabízených možností.
-        3. Dezinformace: Vyhodnoť na základě obecně známých faktů a tónu příspěvku (např. očividné konspirační teorie).
-        4. JSON: Neuváděj žádné úvodní řeči ani vysvětlení, pouze čistý JSON.
-
-        Příspěvek k analýze:
-        {text_prispevku}"""
+    for dávka_idx, dávka in enumerate(tqdm(dávky, desc="Zpracování dávek", unit="dávka")):
+        prompt = _sestroj_dávkový_prompt(dávka)
+        max_tokens_dávka = int(conf["LLM"]["max_tokens"]) * len(dávka)
 
         payload = {
             "model": conf["LLM"]["model"],
-            # "prompt": prompt,
             "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": conf["LLM"]["max_tokens"],
+            "max_tokens": max_tokens_dávka,
             "temperature": conf["LLM"]["temperature"],
-            # "stream": False,
         }
-        # LM‑Studio endpoint
-        ip = conf["LLM"]["host"]
-        port = conf["LLM"]["port"]
-        url = f"http://{ip}:{port}/v1/chat/completions"
-        data_llm = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
-            url, data=data_llm, headers={"Content-Type": "application/json"}
-        )
 
-        try:
-            with urllib.request.urlopen(req) as response:
-                result = json.loads(response.read().decode())
-                vysledek = json.loads(
-                    result["choices"][0]["message"]["content"].strip()
-                )
-        except urllib.error.HTTPError as e:
-            print("Status:", e.code)
-            print("Body:", e.read().decode())  # <- tohle ukaže konkrétní důvod 400
-            raise
+        výsledky = _odešli_dávku(url, payload, len(dávka))
 
-        post.preklad = vysledek["preklad"]
-        post.ner = vysledek["ner"]
-        post.sentiment = vysledek["sentiment"]
-        post.dezinformace = vysledek["dezinformace"]
-        obsah.append(post)
+        if výsledky is None:
+            print(f"❌ Dávka {dávka_idx + 1} selhala i po {MAX_RETRY} pokusech, přeskakuji")
+            continue
 
-    print(f"✅ ... zpracován {len(obsah)} příspěvků")
-    uloz_prispevky_do_jsonl(obsah, postsOutPath)
+        for i, post in enumerate(dávka):
+            if i < len(výsledky):
+                v = výsledky[i]
+                post.preklad = v.get("preklad", "")
+                post.ner = v.get("ner", {})
+                post.sentiment = v.get("sentiment", "")
+                post.dezinformace = v.get("dezinformace", "")
+            zpracováno += 1
+
+    print(f"✅ ... zpracováno {zpracováno} z {len(prispevky)} příspěvků")
+    uloz_prispevky_do_jsonl(prispevky, postsOutPath)
     exit()
+
+
+def _sestroj_dávkový_prompt(dávka):
+    """
+    Sestaví prompt pro dávkové zpracování příspěvků.
+
+    Parametry:
+    ----------
+    dávka : list[Post]
+        seznam příspěvků v jedné dávce
+
+    Vrací:
+    ------
+    str - prompt pro LLM
+    """
+    sekce = []
+    for i, post in enumerate(dávka):
+        lang = post.record.langs[0]
+        lang_nazev = get_language_name(lang)
+        sekce.append(f"[{i}] (jazyk: {lang_nazev})\n{post.record.text}")
+
+    příspěvky_text = "\n\n".join(sekce)
+
+    return f"""Jsi expert na analýzu textu a lingvistiku. Tvým úkolem je analyzovat a přeložit příspěvky ze sociální sítě BlueSky.
+
+Vrať výsledek VŽDY jako validní JSON pole (array), kde každý prvek odpovídá jednomu příspěvku v pořadí, v jakém byly zadány.
+Každý prvek pole má tuto strukturu:
+{{
+  "preklad": "Text přeložený do češtiny. Pokud je originál v češtině, vrať jej beze změny.",
+  "ner": {{
+    "PER": ["seznam osob"],
+    "ORG": ["seznam organizací"],
+    "LOC": ["seznam lokalit"],
+    "GPE": ["seznam geopolitických entit"],
+    "DATE": ["seznam dat"],
+    "FAC": ["seznam zařízení/staveb"]
+  }},
+  "sentiment": "pozitivní | neutrální | negativní",
+  "dezinformace": "ano | ne"
+}}
+
+Pravidla pro zpracování:
+1. NER: Pokud v textu žádná entita daného typu není, vrať prázdný seznam [].
+2. Sentiment: Vyber pouze jednu z nabízených možností.
+3. Dezinformace: Vyhodnoť na základě obecně známých faktů a tónu příspěvku (např. očividné konspirační teorie).
+4. JSON: Neuváděj žádné úvodní řeči ani vysvětlení, pouze čisté JSON pole.
+5. Počet prvků v odpovědi MUSÍ být přesně {len(dávka)}.
+
+Příspěvky k analýze:
+{příspěvky_text}"""
+
+
+def _odešli_dávku(url, payload, počet_příspěvků):
+    """
+    Odešle dávku na LLM endpoint a vrátí pole výsledků.
+    Při selhání opakuje až MAX_RETRYkrát.
+
+    Parametry:
+    ----------
+    url : str
+        URL endpointu LLM
+    payload : dict
+        tělo požadavku
+    počet_příspěvků : int
+        očekávaný počet výsledků v poli
+
+    Vrací:
+    ------
+    list or None - pole výsledků nebo None při selhání
+    """
+    data_llm = json.dumps(payload).encode("utf-8")
+
+    for pokus in range(MAX_RETRY):
+        try:
+            req = urllib.request.Request(
+                url, data=data_llm, headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=300) as response:
+                result = json.loads(response.read().decode())
+                obsah = result["choices"][0]["message"]["content"].strip()
+
+                # odstranění případných markdown obalů kolem JSON
+                if obsah.startswith("```"):
+                    řádky = obsah.split("\n")
+                    obsah = "\n".join(řádky[1:-1])
+
+                výsledky = json.loads(obsah)
+
+                if not isinstance(výsledky, list):
+                    print(f"⚠️ Očekáváno pole, obdrženo {type(výsledky).__name__}")
+                    continue
+
+                if len(výsledky) != počet_příspěvků:
+                    print(f"⚠️ Očekáváno {počet_příspěvků} výsledků, obdrženo {len(výsledky)}")
+                    continue
+
+                return výsledky
+
+        except urllib.error.HTTPError as e:
+            print(f"⚠️ HTTP chyba (pokus {pokus + 1}/{MAX_RETRY}): {e.code}")
+            if pokus < MAX_RETRY - 1:
+                print(f"   {e.read().decode()}")
+        except json.JSONDecodeError as e:
+            print(f"⚠️ Nevalidní JSON odpověď (pokus {pokus + 1}/{MAX_RETRY}): {e}")
+        except Exception as e:
+            print(f"⚠️ Neočekávaná chyba (pokus {pokus + 1}/{MAX_RETRY}): {e}")
+
+    return None
 
 
 def get_language_name(code):
@@ -197,38 +262,15 @@ def get_language_name(code):
     return language_map.get(code, f"Neznámý jazyk ({code})")
 
 
-def uloz_prispevky(out):
-    """
-    Uloží příspěvky do souboru.
-
-    Parametry:
-    ----------
-    out - seznam příspěvků
-
-    Vrací:
-    ------
-    vsechny_prispevky : list of models.AppBskyFeedPost
-        seznam příspěvků vytěžených ze sítě BlueSky
-    """
-    global postsOutPath
-    # uloz_json(self.nerJSONL, self.ner)
-    with open(postsOutPath, "w", encoding="utf-8") as f:
-        for post in out:
-            f.write(json.dumps(post))
-            f.write("\n")
-    print(f"✅ ... uloženo do souboru {postsOutPath}")
-
-
 # Hlavní funkce
 def main():
-    global postsOutPath, out, language_map
+    global language_map
     df = pd.read_csv("data/ISO639.csv", sep=";")
     language_map = (
         df.dropna(subset=["ISO 639-1"]).set_index("ISO 639-1")["název"].to_dict()
-    )  # vytvoření slovníku s jazyky
-    print(f"✅ ... vytvořen slovník jazyků")  # DEBUG
-    check_config()  # kontrola konzistence config.ini
-    uloz_json(postsOutPath, out)
+    )
+    print(f"✅ ... vytvořen slovník jazyků")
+    check_config()
 
 
 if __name__ == "__main__":
