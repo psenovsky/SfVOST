@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
 from src.BlueSky import BlueSky
 from src.ner import ner
 from src.sentiment import sentiment
+from src.models import uloz_prispevky_do_parquet, uloz_prispevky_do_jsonl
 
 import sys
 import json
@@ -68,7 +69,7 @@ class DataForm(QWidget):
         layout.addWidget(self.sentiment_checkbox)
 
         # Uložení výsledků
-        layout.addWidget(QLabel("Uložit výsledky analýzy do souboru (JSONL)"))
+        layout.addWidget(QLabel("Uložit výsledky analýzy do souboru (JSONL/Parquet)"))
         save_layout = QHBoxLayout()
         self.save_input = QLineEdit()
         save_button = QPushButton("...")
@@ -117,7 +118,7 @@ class DataForm(QWidget):
         """
         událost po na tlačítko "..." v poli pro nastavení cesty k souboru pro uložení výsledků
         """
-        file_path, _ = QFileDialog.getSaveFileName(self, "Ulož soubor", "", "JSON soubor(*.json);;JSONL Files (*.jsonl)")
+        file_path, _ = QFileDialog.getSaveFileName(self, "Ulož soubor", "", "JSONL soubor(*.jsonl);;Parquet soubor(*.parquet)")
         if file_path:
             self.save_input.setText(file_path)
 
@@ -169,11 +170,11 @@ class DataForm(QWidget):
                 sen = sentiment(cestaJSON = "", cestaExport = "", postsJSONL = prispevky)
                 prispevky = sen.sentiment
 
-        with open(self.save_input.text(), "w", encoding="utf-8") as f:
-            for post in prispevky:
-                f.write(json.dumps(post))
-                f.write("\n")
-        print(f"✅ ... uloženo do souboru {self.save_input.text()}")
+        cesta = self.save_input.text()
+        if cesta.endswith(".parquet"):
+            uloz_prispevky_do_parquet(prispevky, cesta)
+        else:
+            uloz_prispevky_do_jsonl(prispevky, cesta)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
