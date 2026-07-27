@@ -9,6 +9,7 @@ import os
 import json                                             # zpracování JSON souborů
 
 from src.utils import check_config_ini
+from src.models import Post, nacti_prispevky_z_jsonl, uloz_prispevky_do_jsonl
 from src.ner_CZ import ner_CZ
 from src.ner_BERT_EN import ner_BERT_EN
 
@@ -99,35 +100,23 @@ class ner:
         bert_en = ner_BERT_EN()
         ner_cz = ner_CZ()
         if self.mode == "soubor":
-            with open(self.postsPath, 'r', encoding='utf-8') as file:
-                self.postsJSONL = file.readlines()
+            self.postsJSONL = nacti_prispevky_z_jsonl(self.postsPath)
 
         msg = ""
-        for line in self.postsJSONL:
+        for post in self.postsJSONL:
             prispevky += 1
-            if self.mode == "soubor":
-                if not line.strip():
-                    continue
-                try:
-                    data = json.loads(line)
-                except json.JSONDecodeError:
-                    msg += f"❌ Chyba při načítání příspěvku: {line}"
-                    continue
-            else:  # mode == "text"
-                data = line  # už je to slovník
-
             try:
-                lang = data['record']['langs'][0]  # first language in post
+                lang = post.record.langs[0]  # first language in post
                 if lang == 'en':
-                    data['ner'] = bert_en.ner(data['record']['text'])
+                    post.ner = bert_en.ner(post.record.text)
                 elif lang in ['cs', 'bg', 'pl', 'ru', 'uk']:
-                    data['ner'] = ner_cz.ner(data['record']['text'])
+                    post.ner = ner_cz.ner(post.record.text)
                 else:
                     preskoceno += 1
-                    msg += f"❌ příspěvek v neznámém jazyce {lang}, přeskakuji řádek {line}"
-                obsah.append(data)
-            except json.JSONDecodeError:
-                msg += f"❌ Chyba při načítání příspěvku: {line}"
+                    msg += f"❌ příspěvek v neznámém jazyce {lang}, přeskakuji příspěvek {post.uri}"
+                obsah.append(post)
+            except Exception as e:
+                msg += f"❌ Chyba při zpracování příspěvku: {e}"
 
         if not obsah:
             error = "⚠️ Varování: Žádné platné příspěvky nebyly načteny. Zkontrolujte soubor, který načítáte."
@@ -151,9 +140,4 @@ class ner:
         vsechny_prispevky : list of models.AppBskyFeedPost
             seznam příspěvků vytěžených ze sítě BlueSky
         """
-        #uloz_json(self.nerJSONL, self.ner)
-        with open(self.nerJSONL, "w", encoding="utf-8") as f:
-            for post in self.ner:
-                f.write(json.dumps(post))
-                f.write("\n")
-        print(f"✅ ... uloženo do souboru {self.nerJSONL}")
+        uloz_prispevky_do_jsonl(self.ner, self.nerJSONL)

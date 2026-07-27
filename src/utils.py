@@ -99,12 +99,15 @@ def uloz_json(cesta, data):
     ----------
     cesta : str
         cesta k souboru, do kterého se má data uložit.
-    data : dict
-        data, která se mají uložit.
+    data : list
+        seznam příspěvků (dict nebo pydantic model) k uložení.
     """
+    import json
     with open(cesta, "w", encoding="utf-8") as f:
         for post in data:
-            print(post)
-            f.write(post.model_dump_json())
+            if hasattr(post, 'model_dump_json'):
+                f.write(post.model_dump_json())
+            else:
+                f.write(json.dumps(post))
             f.write("\n")
     print(f"✅ ... uloženo do souboru {cesta}")

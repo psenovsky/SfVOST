@@ -41,6 +41,7 @@ from src.utils import (
     check_config_ini,  # kontrola konzistence config.ini
     uloz_json,  # uložení JSON do souboru
 )
+from src.models import Post, nacti_prispevky_z_jsonl, uloz_prispevky_do_jsonl
 
 # iniciace globálních proměnných
 out = None  # výstup modelu
@@ -104,24 +105,16 @@ def LLM(postsPath, postsOutPath):
     """
     global postsJSONL, conf
     obsah = []
-    with open(postsPath, "r", encoding="utf-8") as file:
-        postsJSONL = file.readlines()
+
+    prispevky = nacti_prispevky_z_jsonl(postsPath)
 
     msg = ""
     # for line in postsJSONL:
-    prispevky = 0
-    for line in tqdm(postsJSONL, desc="Zpracování příspěvků", unit="line"):
-        if not line.strip():
-            continue
-        try:
-            data = json.loads(line)
-        except json.JSONDecodeError:
-            msg += f"❌ Chyba při načítání příspěvku: {line}"
-            continue
-
-        lang = data["record"]["langs"][0]  # první jazyk v příspevku
+    prispevky_zpracovano = 0
+    for post in tqdm(prispevky, desc="Zpracování příspěvků", unit="příspěvek"):
+        lang = post.record.langs[0]  # první jazyk v příspevku
         lang_nazev = get_language_name(lang)
-        post = data["record"]["text"]
+        text_prispevku = post.record.text
         prompt = f"""Jsi expert na analýzu textu a lingvistiku. Tvým úkolem je analyzovat a přeložit příspěvek ze sociální sítě BlueSky.
         
         Příspěvek je v jazyce: {lang_nazev}.
@@ -148,7 +141,7 @@ def LLM(postsPath, postsOutPath):
         4. JSON: Neuváděj žádné úvodní řeči ani vysvětlení, pouze čistý JSON.
 
         Příspěvek k analýze:
-        {post}"""
+        {text_prispevku}"""
 
         payload = {
             "model": conf["LLM"]["model"],
@@ -178,14 +171,14 @@ def LLM(postsPath, postsOutPath):
             print("Body:", e.read().decode())  # <- tohle ukaže konkrétní důvod 400
             raise
 
-        data["post_CZ"] = vysledek["preklad"]
-        data["ner"] = vysledek["ner"]
-        data["sentiment"] = vysledek["sentiment"]
-        data["dezinformace"] = vysledek["dezinformace"]
-        obsah.append(data)
+        post.preklad = vysledek["preklad"]
+        post.ner = vysledek["ner"]
+        post.sentiment = vysledek["sentiment"]
+        post.dezinformace = vysledek["dezinformace"]
+        obsah.append(post)
 
     print(f"✅ ... zpracován {len(obsah)} příspěvků")
-    uloz_prispevky(obsah)
+    uloz_prispevky_do_jsonl(obsah, postsOutPath)
     exit()
 
 

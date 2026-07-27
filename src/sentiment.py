@@ -10,6 +10,7 @@ import json                                             # zpracování JSON soub
 import regex as re                                      # regulární výrazy s Unicode podporou
 
 from src.utils import check_config_ini
+from src.models import Post, nacti_prispevky_z_jsonl, uloz_prispevky_do_jsonl
 from src.sentiment_BERT_multi import sentiment_BERT_multi
 from src.sentiment_Czert_B import sentiment_Czert_B
 
@@ -99,34 +100,22 @@ class sentiment:
         bertMulti = sentiment_BERT_multi()
         czertB = sentiment_Czert_B()
         if self.mode == "soubor":
-            with open(self.cestaJSON, 'r', encoding='utf-8') as file:
-                self.postsJSONL = file.readlines()
+            self.postsJSONL = nacti_prispevky_z_jsonl(self.cestaJSON)
 
         msg = ""
-        for line in self.postsJSONL:
+        for post in self.postsJSONL:
             prispevky += 1
-            if self.mode == "soubor":
-                if not line.strip():
-                    continue
-                try:
-                    data = json.loads(line)
-                except json.JSONDecodeError:
-                    msg += f"❌ Chyba při načítání příspěvku: {line}"
-                    continue
-            else:  # mode == "text"
-                data = line  # už je to slovník
-
             try:
-                t = self.clean_text(data['record']['text'])
-                lang = data['record']['langs'][0]
+                t = self.clean_text(post.record.text)
+                lang = post.record.langs[0]
                 if lang in ['en', 'nl', 'de', 'fr', 'it', 'es']:
-                    data['sentiment'] = bertMulti.sentiment(t)
+                    post.sentiment = bertMulti.sentiment(t)
                 elif lang == 'cs':
-                    data['sentiment'] = czertB.sentiment(t)
+                    post.sentiment = czertB.sentiment(t)
                 else:
                     preskoceno += 1
-                    msg += f"❌ příspěvek v neznámém jazyce {lang}, přeskakuji řádek {line}"
-                obsah.append(data)
+                    msg += f"❌ příspěvek v neznámém jazyce {lang}, přeskakuji příspěvek {post.uri}"
+                obsah.append(post)
             except Exception as e:
                 msg += f"❌ Chyba při zpracování příspěvku: {e}"
 
@@ -152,11 +141,7 @@ class sentiment:
         vsechny_prispevky : list of models.AppBskyFeedPost
             seznam příspěvků vytěžených ze sítě BlueSky
         """
-        with open(self.cestaExport, "w", encoding="utf-8") as f:
-            for post in self.sentiment:
-                f.write(json.dumps(post))
-                f.write("\n")
-        print(f"✅ ... uloženo do souboru {self.cestaExport}")
+        uloz_prispevky_do_jsonl(self.sentiment, self.cestaExport)
 
     def clean_text(self, text):
         """
