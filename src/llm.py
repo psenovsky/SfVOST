@@ -118,8 +118,11 @@ class llm:
 
         dávky = [prispevky[i:i + batch_size] for i in range(0, len(prispevky), batch_size)]
         zpracováno = 0
+        celkem_davek = len(dávky)
+        print(f"✅ Načteno {len(prispevky)} příspěvků, zpracuji ve {celkem_davek} dávkách")
 
-        for dávka in dávky:
+        for dávka_idx, dávka in enumerate(dávky, 1):
+            print(f"📡 Zpracovávám dávku {dávka_idx}/{celkem_davek} ({len(dávka)} příspěvků)...")
             prompt = self._sestroj_dávkový_prompt(dávka)
             max_tokens_dávka = int(self.config["LLM"]["max_tokens"]) * len(dávka)
 
@@ -133,6 +136,7 @@ class llm:
             výsledky = self._odešli_dávku(url, payload, len(dávka))
 
             if výsledky is None:
+                print(f"   ⚠️ Dávka {dávka_idx} selhala, přeskakuji")
                 continue
 
             for i, post in enumerate(dávka):
@@ -143,13 +147,16 @@ class llm:
                     post.sentiment = v.get("sentiment", "")
                     post.dezinformace = v.get("dezinformace", "")
                 zpracováno += 1
+            print(f"   ✅ Dávka {dávka_idx} hotova")
 
         if zpracováno == 0:
+            print(f"❌ LLM analýza selhala - žádné příspěvky nebyly zpracovány")
             return {
                 "result": False,
                 "zprava": "❌ LLM analýza selhala - žádné příspěvky nebyly zpracovány"
             }
 
+        print(f"✅ LLM analýza dokončena - zpracováno {zpracováno}/{len(prispevky)} příspěvků")
         return {
             "result": True,
             "vsechny_prispevky": prispevky
