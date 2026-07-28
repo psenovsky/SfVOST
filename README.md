@@ -653,9 +653,3 @@ Tato verze se zcela zaměřuje na doplnění alespoň základního rozhraní pro
 - refaktorovány skripty s cílem osamostatnit programovou logiku do samostatných tříd pro pozdější implementaci GUI
 
 # Věci k dodělání
-
-- integrující skript který na jeden příkaz zrealizuje vše
-- implementace dashboard
-- ~~přechod na formát Apache Arrow pro analytické výstupy~~ (hotovo v0.9)
-- optimalizace LLM analýzy (batch processing)
-- ~~implementace spaCy frameworku pro NER~~ (hotovo v0.10)
