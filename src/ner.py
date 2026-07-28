@@ -10,8 +10,7 @@ import json                                             # zpracování JSON soub
 
 from src.utils import check_config_ini
 from src.models import Post, nacti_prispevky_z_jsonl, uloz_prispevky_do_jsonl
-from src.ner_CZ import ner_CZ
-from src.ner_BERT_EN import ner_BERT_EN
+from src.ner_spacy import ner_spacy
 
 class ner:
     def __init__(self, postsPath, nerJSONL, postsJSONL = ""):
@@ -82,7 +81,7 @@ class ner:
 
     def analyzuj_ner(self):
         """
-        Provede identifikaci pojmenovaných entit
+        Provede identifikaci pojmenovaných entit pomocí spaCy frameworku.
 
         Parametry:
         ----------
@@ -90,15 +89,18 @@ class ner:
 
         Vrací:
         ------
-        None
+        dict
+            Slovník s výsledky analýzy NER
 
         doplní k příspěvkům ze sociální sítě BlueSky identifikované NER.
         """
         obsah = []
         prispevky = 0
         preskoceno = 0
-        bert_en = ner_BERT_EN()
-        ner_cz = ner_CZ()
+        spacy_ner = ner_spacy()
+
+        ner_models = self._nacti_ner_modely()
+
         if self.mode == "soubor":
             self.postsJSONL = nacti_prispevky_z_jsonl(self.postsPath)
 
@@ -107,16 +109,15 @@ class ner:
             prispevky += 1
             try:
                 lang = post.record.langs[0]  # first language in post
-                if lang == 'en':
-                    post.ner = bert_en.ner(post.record.text)
-                elif lang in ['cs', 'bg', 'pl', 'ru', 'uk']:
-                    post.ner = ner_cz.ner(post.record.text)
+                if lang in ner_models:
+                    model_name = ner_models[lang]
+                    post.ner = spacy_ner.ner(post.record.text, lang, model_name)
                 else:
                     preskoceno += 1
-                    msg += f"❌ příspěvek v neznámém jazyce {lang}, přeskakuji příspěvek {post.uri}"
+                    msg += f"⚠️ Příspěvek v jazyce {lang} není nakonfigurován pro NER, přeskakuji příspěvek {post.uri}\n"
                 obsah.append(post)
             except Exception as e:
-                msg += f"❌ Chyba při zpracování příspěvku: {e}"
+                msg += f"❌ Chyba při zpracování příspěvku: {e}\n"
 
         if not obsah:
             error = "⚠️ Varování: Žádné platné příspěvky nebyly načteny. Zkontrolujte soubor, který načítáte."
@@ -141,3 +142,30 @@ class ner:
             seznam příspěvků vytěžených ze sítě BlueSky
         """
         uloz_prispevky_do_jsonl(self.ner, self.nerJSONL)
+
+    def _nacti_ner_modely(self) -> dict:
+        """
+        Načte konfiguraci NER modelů z config.ini.
+
+        Vrací:
+        ------
+        dict
+            Slovník mapující kód jazyka na název spaCy modelu
+        """
+        default_models = {
+            "en": "en_core_web_lg",
+            "cs": "cs_core_news_lg",
+            "bg": "bg_core_news_lg",
+            "pl": "pl_core_news_lg",
+            "ru": "ru_core_news_lg",
+            "uk": "uk_core_news_lg"
+        }
+
+        try:
+            if self.config.has_section('ner') and self.config.has_option('ner', 'modely'):
+                modely_json = self.config.get('ner', 'modely')
+                return json.loads(modely_json)
+        except (json.JSONDecodeError, configparser.NoSectionError, configparser.NoOptionError):
+            pass
+
+        return default_models

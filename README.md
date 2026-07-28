@@ -55,7 +55,7 @@ Pro inicializaci projektu postupujte takto:
 
 ```bash
 # ve složce pro projekt
-git clone <url-repozitare>
+git clone https://github.com/psenovsky/SfVOST/tree/main
 uv sync
 ```
 
@@ -82,6 +82,7 @@ Závislosti jsou definovány v souboru `pyproject.toml` a zahrnují:
 | pyarrow        | >=20.0.0 | Podpora Apache Arrow/Parquet formátu pro analytické účely                |
 | pymysql        | >=1.1.2  | Klient pro připojení k MySQL/MariaDB databázi                             |
 | pyqt6          | >=6.10.2 | GUI rozhraní aplikace                                                     |
+| spacy          | >=3.8.0  | Framework pro NLP a NER analýzu                                           |
 | streamlit      | >=1.54.0 | Webové rozhraní pro vizualizaci                                           |
 | torch          | >=2.10.0 | Framework pro strojové učení (základ pro modely NER a sentimentu)          |
 | tqdm           | >=4.67.3 | Zobrazení průběhu zpracování                                              |
@@ -351,18 +352,47 @@ Spočítá sentiment příspěvků uloženým v souboru data/post.jsonl a výsle
 
 Identifikované entity vypadají např. takto: Tehran (LOC), Tel Aviv (LOC), Trump (PER), Netanyahu (PER), Yousuf Nazar (PER). Formát je vždy entita a typ entity, např. Tel Aviv (LOC) - tedy lokace, Trump (PER) - tedy persona/osobnost.
 
-Identifikace je do jisté míry závislá na jazyku. Např. Tehran je označení hlavní města Iránu v angličtině, v češtině by byl ale použit název Teherán. O kvalitě detekce tak rozhoduje model, který byl použit pro detekci entit.
+Identifikace je do jisté míry závislá na jazyku. Např. Tehran je označení hlavního města Iránu v angličtině, v češtině by byl ale použit název Teherán. O kvalitě detekce tak rozhoduje model, který byl použit pro detekci entit.
 
-Pro detekci entit se v současnosti používají dva modely:
-- dbmdz/bert-large-cased-finetuned-conll03-english, který je adaptován na texty v angličtině.
-- SlavicNLP/slavicner-ner-cross-topic-large pro jazyky čeština, polština, bulharština, ruština a ukrajinština
+### spaCy framework
+
+Pro detekci entit se v současnosti používá framework spaCy s následujícími modely:
+- `en_core_web_lg` pro angličtinu
+- `cs_core_news_lg` pro češtinu
+- `bg_core_news_lg` pro bulharštinu
+- `pl_core_news_lg` pro polštinu
+- `ru_core_news_lg` pro ruštinu
+- `uk_core_news_lg` pro ukrajinštinu
+
+Modely se nakonfigurují v souboru `config.ini` v sekci `[ner]` ve formátu JSON:
+
+```ini
+[ner]
+modely = {"en": "en_core_web_lg", "cs": "cs_core_news_lg", "bg": "bg_core_news_lg", "pl": "pl_core_news_lg", "ru": "ru_core_news_lg", "uk": "uk_core_news_lg"}
+```
+
+**Důležité**: Po instalaci projektu je potřeba nainstalovat spaCy modely:
+
+```bash
+uv run python -m spacy download en_core_web_lg
+uv run python -m spacy download cs_core_news_lg
+uv run python -m spacy download bg_core_news_lg
+uv run python -m spacy download pl_core_news_lg
+uv run python -m spacy download ru_core_news_lg
+uv run python -m spacy download uk_core_news_lg
+```
+
+### Podporované typy entit
 
 Entity mohou být následujícího typu:
 - LOC - lokace
 - PER - persona (osobnost)
 - ORG - organizace
+- GPE - geopolitická entita
 - EVT - events (událost)
 - PRO - produkt
+- FAC - zařízení/stavby
+- DATE - datum
 - MISC - různé
 
 Technicky skript přidá informaci o detekovaných entitách k existujícím záznamům předaných parametrem -p a doplní k nim sekci "ner" s hodnotou sentimentu v následujícím formátu:
@@ -588,15 +618,17 @@ uv run SfVOST_LLM.py -p data/post.jsonl -o data/vystupy.jsonl
 
 ## Verze
 
-### v0.9
+### v0.8
 
+- implementován spaCy framework pro detekci pojmenovaných entit (NER)
+- odstraněny staré implementace založené na transformers (ner_CZ.py, ner_BERT_EN.py)
+- přidána sekce `[ner]` do config.ini pro konfiguraci spaCy modelů
+- podpora více jazyků prostřednictvím konfigurace
+- aktualizována GUI o formulář pro nastavení NER modelů
 - přidána podpora Apache Arrow/Parquet formátu pro analytické výstupy
 - nový modul `export-cli.py` pro konverzi JSONL → Parquet
 - přidány funkce `uloz_prispevky_do_parquet()`, `nacti_prispevky_z_parquet()`, `prispevky_na_flat_row()` do `src/models.py`
 - aktualizována šablona `vost_template.Rmd` o podporu načítání Parquet souborů
-
-### v0.8
-
 - implementována hierarchie tříd pro příspěvky ze sociálních sítí pomocí pydantic
 - přidán modul `src/models.py` s definicemi datových struktur pro příspěvky a výsledky analýz
 - refaktoring analytických modulů (ner, sentiment, LLM) pro použití pydantic modelů
@@ -626,4 +658,4 @@ Tato verze se zcela zaměřuje na doplnění alespoň základního rozhraní pro
 - implementace dashboard
 - ~~přechod na formát Apache Arrow pro analytické výstupy~~ (hotovo v0.9)
 - optimalizace LLM analýzy (batch processing)
-- implementace spaCy frameworku pro NER
+- ~~implementace spaCy frameworku pro NER~~ (hotovo v0.10)

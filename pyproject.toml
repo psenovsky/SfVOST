@@ -13,6 +13,7 @@ dependencies = [
     "pydantic>=2.11.0",
     "pymysql>=1.1.2",
     "pyqt6>=6.10.2",
+    "spacy>=3.8.0",
     "streamlit>=1.54.0",
     "torch>=2.10.0",
     "tqdm>=4.67.3",

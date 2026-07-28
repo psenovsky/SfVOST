@@ -28,6 +28,7 @@ class ConfigForm(QWidget):
             "casove_limity": "Časové limity",
             "BlueSky": "BlueSky",
             "LLM": "LLM",
+            "ner": "NER (pojmenované entity)",
         }
 
         labels = {
@@ -55,6 +56,9 @@ class ConfigForm(QWidget):
                 "host": "Hostitel",
                 "port": "Port",
                 "batch_size": "Velikost dávky",
+            },
+            "ner": {
+                "modely": "Modely (JSON: jazyk → spaCy model)",
             },
         }
 
