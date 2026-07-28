@@ -540,8 +540,8 @@ Analýza se spustí kliknutím na tlačítko "Analyzuj".
 
 Spuštění GUI se děje pomocí příkazové řádky:
 
-```python
-python3 SfVOST-GUI.py
+```bash
+uv run run_gui.py
 ```
 Další interakce s uživatelem probíhá pomocí GUI.
 

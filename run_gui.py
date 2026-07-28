@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Tento soubor byl přesunut do složky gui/.
-Pro spuštění GUI použijte: python3 run_gui.py
+Spouštěč GUI aplikace SFVOST.
 """
 import sys
 import os
