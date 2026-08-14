@@ -24,7 +24,13 @@ The utility will be called `newton_one.py`.
 
 The development will be realized in the phases. We will work on single phase at a time and test/update untile happy with results pf the phase. The fases are as follows:
 
-- [ ] Phase 1: Plan creation
+- [x] Phase 1: Plan creation
+- [ ] Phase 2: CSV ingestion and preprocessing
+- [ ] Phase 3: Analysis pipeline integration  - small models
+- [ ] Phase 4: Analysis pipeline integration - LLM
+- [ ] Phase 5: Keywords extraction
+- [ ] Phase 6: Output consolidation and export
+- [ ] Phase 7: Update documentation
 
 
 ### Phase 1: Plan creation
@@ -57,4 +63,84 @@ Changes in existing code must not impact provided functions by the project. By t
 
 There will also be new functionality, namely keywords detection based on columns `Anotace` and `Plné znění`. Separate keywords list is expected for both columns. In the future, we may want to analyze them. The analysis of possible differences between the keywords will be not part of the utility we are building.
 
-Create further stages of the plan.
+### Phase 2: CSV ingestion and preprocessing
+
+Build `newton_one.py` — a CLI utility that reads a NewtonOne CSV file and converts it into JSONL format suitable for downstream analysis tools.
+
+#### Tasks:
+- Accept path to a semicolon-delimited CSV file as the first positional argument (or via `-c`/`--csv`)
+- we are presumming that the encoding of the file is in UTF-8
+- Parse all 63 columns of `data/Tornado_2021_ciste.csv`, selecting the analytically relevant subset: Kód článku, Datum publikování, Název, Zdroj, Země, Typ média, Anotace, Plné znění, Typ zprávy, Sentiment, Dosah
+- For each row, produce a JSON object with keys matching column names (Czech) and their values as strings — except where natural (Kód článku → str, Datum publikování → str in YYYY-MM-DD format if possible)
+- Output to JSONL file specified via `-o`/`--output` argument
+- ulitity should check whether the file exists and if yes as, whether the file should be overwtitten
+- Print summary statistics: number of rows read, write progress bar
+
+#### Design notes:
+- Do NOT modify `data/Tornado_2021_ciste.csv` — it is reference data
+- Handle quoting issues in semicolon-delimited CSV (fields may contain commas or quotes)
+- Output JSONL must be line-buffered and deterministic (sorted keys for reproducibility)
+
+### Phase 3: Analysis pipeline integration - small models
+
+Wire together existing NER, sentiment (Czert-B + LLM-based), and disinformation detection into the new utility. Add `Sentiment_SM` as a parallel output alongside the pre-existing `Sentiment`. Ensure BlueSky functionality remains isolated in `src/BlueSky.py` — no changes to it.
+
+In this phase we will be using small model implementations available in existing codebase.
+
+#### Tasks:
+- Reuse existing spaCy NER implementation (`src/ner_spacy.py`, language model mapping from `config.ini [ner]`) for `Plné znění` column in new field `NER_SM`
+- Run Czert-B sentiment analysis (`src/sentiment_Czert_B.py`) on `Plné znění` and store results in new field `Sentiment_SM` (do NOT overwrite existing `Sentiment` column)
+- Integrate zero-shot disinformation detection (`facebook/bart-large-mnli`) from `dezinformace.py` into the pipeline as a separate output field (e.g. `Dezinformace`) — include label and confidence score
+- Process all rows in batches to avoid memory issues; respect existing timeout/configuration limits
+- Preserve original data integrity: if any analysis step fails on a row, mark it with error indicator but continue processing
+
+#### Design notes:
+- Changes must NOT impact existing functions of `src/BlueSky.py` — BlueSky is disabled/isolated for this utility
+- Do not modify `config.ini` — reuse it as-is; add new sections only if needed (e.g. `[newton_one]`)
+
+### Phase 4: Analysis pipeline integration - LLM
+
+We will continue our work from phase 3. We will be using LLM for it now. Look into `data/llm.py` for implementation detail.
+
+#### Tasks
+- Implement  LLM-based sentiment analysis and NER using `config.ini [LLM]` settings; if endpoint is unavailable, skip gracefully with warning
+
+
+#### Design notes
+- since the media articles, posts, etc can be long it makes no sense to use batch processing
+- make sure that signature of the functions in `data/llm.py` does not change - we need it for other utitilities in the project.
+- the prompt in the  `data/llm.py` cannot change - derive new one from it for NER and sentiment analysis
+- the resulting information should be inserted into new fields `sentiment_LLM` and `NER_LLM`
+
+### Phase 5: Keywords extraction
+
+Implement keyword detection from both `Anotace` and `Plné znění` columns using separate, configurable keyword lists. No cross-column analysis yet.
+
+#### Tasks:
+- use LLM for identification of the keywords
+- Store results as JSON arrays of matched keyword strings per row
+- Add fields `Klíčová_slova_Anotace` and `Klíčová_slova_Plné_znění` to the output JSON
+
+#### Design notes:
+- `Anotace` and `Plné znění` must be analyzed separately - each will produce its own list of keywords
+- Empty/missing text values should produce empty arrays, not errors
+- broaden implementation of the Analysis pipeline integration - LLM from phase 4
+
+### Phase 6: Output consolidation and export
+
+Combine all analysis results into a single output format (JSONL or CSV) per article, preserving the original column structure plus new derived fields.
+
+#### Tasks:
+- After running Phases 2–6 pipeline sequentially on each row, produce final consolidated JSONL with all fields merged
+- Include: original columns + NER results + SentimentLLM + Dezinformace + keywords from both columns
+- Add optional CSV export mode (`--format csv`) that writes back to semicolon-delimited format preserving column order
+- Support parallel processing for large datasets (optional `--parallel` flag)
+- Generate summary report printed to stdout: total rows, error counts per step, time elapsed
+
+#### Design notes:
+- Final output must be a single file containing all analyses — no intermediate files required unless using batch mode
+- Output JSON keys should remain in Czech to match project convention
+
+### Phase 7: Update documentation
+
+Update `README.md` with newly added functionality from previous phases. 
