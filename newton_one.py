@@ -24,6 +24,10 @@ import os                                                     # operace se syst�
 from datetime import datetime                                 # práce s daty
 
 
+# Unicode znaky, které by mohly být mezernatami v číslech (např. U+00A0 nbsp, U+2007 thin space)
+UNICODE_WHITESPACE = "\xa0\u2007\u2008\u2009\u200a\u205f\u3000"
+
+
 # =============================================================================
 # Konstanty
 # =============================================================================
@@ -46,7 +50,7 @@ SLoupce = [
     {"nazev": "Plné znění",      "typ": str},
     {"nazev": "Typ zprávy",      "typ": str},
     {"nazev": "Sentiment",       "typ": str},
-    {"nazev": "Dosah",           "typ": str},
+    {"nazev": "Dosah",           "typ": int, "strip_space": True},
 ]
 
 
@@ -130,13 +134,25 @@ def pretvorit_radku(radka: dict[str, str]) -> dict[str, str]:
     vysledek = {}
     for sloupec in SLoupce:
         nazev = sloupec["nazev"]
-        hodnota = radka.get(nazev, "").strip()
+        hodnota = radka.get(nazev, "")
+
+        # Strhání mezernat ze všech hodnot (včetně Unicode whitespace)
+        if sloupec.get("strip_space"):
+            hodnota = "".join(ch for ch in hodnota if ch not in UNICODE_WHITESPACE).strip()
+
         if not hodnota:
             hodnota = ""
 
         # Datum publikování formátujeme na YYYY-MM-DD
         if nazev == "Datum publikování":
             hodnota = parse_datum(hodnota) or hodnota
+
+        # Dosah → integer
+        if nazev == "Dosah" and sloupec.get("typ") == int:
+            try:
+                hodnota = int(float(hodnota))  # float→int pro případ desetinných čísel
+            except (ValueError, TypeError):
+                hodnota = ""
 
         vysledek[nazev] = hodnota
 
@@ -173,6 +189,7 @@ def ulozit_jsonl(radky: list[dict[str, str]], cesta_output: str) -> int:
 
     # Uložit
     count = 0
+    total = len(radky)
     with open(cesta_output, "w", encoding=JSONL_ENCODING) as f:
         for radka in radky:
             json_str = json.dumps(radka, ensure_ascii=False, sort_keys=True)
@@ -180,14 +197,13 @@ def ulozit_jsonl(radky: list[dict[str, str]], cesta_output: str) -> int:
             count += 1
 
             # Progress bar (50 znaků)
-            if count % 10 == 0 or count == len(radky):
-                percent = count / len(radky) * 100
+            if count % 10 == 0 or count == total:
+                percent = count / total * 100
                 filled = int(percent / 2)
                 bar = "█" * filled + "░" * (50 - filled)
-                print(f"\r{bar} {count}/{len(radky)} ({percent:.0f}%)", end="")
+                print(f"\r{bar} {count}/{total} ({percent:.0f}%)", end="")
 
-    print()  # nový řádek po progress baru
-    print(f"✅ Zapsáno {count} řádků do souboru {cesta_output}")
+    print()  # nový řádek po progress baru    print(f"✅ Zapsáno {count} řádků do souboru {cesta_output}")
     return count
 
 
