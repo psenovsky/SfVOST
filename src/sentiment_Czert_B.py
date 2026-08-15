@@ -24,7 +24,7 @@ class sentiment_Czert_B(ISentiment):
         Inicializace modelu Czert-B, pokud ještě nebyl načten
         """
         print("Inicializace modelu Czert-B.....")
-        self.nlp = pipeline("fill-mask", model="UWB-AIR/Czert-B-base-cased")
+        self.nlp = pipeline("fill-mask", model="UWB-AIR/Czert-B-base-cased", tie_word_embeddings=False)
         print("✅ Model úspěšně inicializován")
 
     def sentiment(self, text):
