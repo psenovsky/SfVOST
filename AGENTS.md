@@ -25,12 +25,14 @@ The utility will be called `newton_one.py`.
 The development will be realized in the phases. We will work on single phase at a time and test/update untile happy with results pf the phase. The fases are as follows:
 
 - [x] Phase 1: Plan creation
-- [ ] Phase 2: CSV ingestion and preprocessing
+- [x] Phase 2: CSV ingestion and preprocessing
 - [ ] Phase 3: Analysis pipeline integration  - small models
-- [ ] Phase 4: Analysis pipeline integration - LLM
-- [ ] Phase 5: Keywords extraction
-- [ ] Phase 6: Output consolidation and export
-- [ ] Phase 7: Update documentation
+- [ ] Phase 4: Optimization of API calls
+- [ ] Phase 5: Analysis pipeline integration - LLM
+- [ ] Phase 6: Keywords extraction
+- [ ] Phase 7: Output consolidation and export
+- [ ] Phase 8: Update documentation
+- [ ] Phase 9: Review of Efficiency of BlueSky part of the project
 
 
 ### Phase 1: Plan creation
@@ -96,9 +98,20 @@ In this phase we will be using small model implementations available in existing
 
 #### Design notes:
 - Changes must NOT impact existing functions of `src/BlueSky.py` — BlueSky is disabled/isolated for this utility
+- if `Plné znění` column is empry, perform analysis on `Anotace` column
 - Do not modify `config.ini` — reuse it as-is; add new sections only if needed (e.g. `[newton_one]`)
 
-### Phase 4: Analysis pipeline integration - LLM
+### Phase 4: Optimization of API calls
+
+`newton_one.py` and the modells it calls, hit very easily rate limits of HugingFace and we are the reason of it as we use the API extremely inefficiently. We need to ensure, that each API is initialized only once (best case scenario).
+
+It should be possible for data, we are going to analyze, as they are czech only. This is not the case for BlueSky analysis portion of the project. I doubt that the solution for BlueSky will be so straign forward. Maybe create new file in `src` based on `src/sentiment_Czert_B.py` to not break BlueSky functionality. We will solve this problem in some future (yet unplanned) phases of the project. 
+
+To further limit the problem we will focus on only one of the analyses NER, sentiment or disinformation - choose first one you encounter and comment others out in `newton_one.py`.
+
+Focus on efficiency problems, caching, and repeted initializations of the models.
+
+### Phase 5: Analysis pipeline integration - LLM
 
 We will continue our work from phase 3. We will be using LLM for it now. Look into `data/llm.py` for implementation detail.
 
@@ -112,7 +125,7 @@ We will continue our work from phase 3. We will be using LLM for it now. Look in
 - the prompt in the  `data/llm.py` cannot change - derive new one from it for NER and sentiment analysis
 - the resulting information should be inserted into new fields `sentiment_LLM` and `NER_LLM`
 
-### Phase 5: Keywords extraction
+### Phase 6: Keywords extraction
 
 Implement keyword detection from both `Anotace` and `Plné znění` columns using separate, configurable keyword lists. No cross-column analysis yet.
 
@@ -126,7 +139,7 @@ Implement keyword detection from both `Anotace` and `Plné znění` columns usin
 - Empty/missing text values should produce empty arrays, not errors
 - broaden implementation of the Analysis pipeline integration - LLM from phase 4
 
-### Phase 6: Output consolidation and export
+### Phase 7: Output consolidation and export
 
 Combine all analysis results into a single output format (JSONL or CSV) per article, preserving the original column structure plus new derived fields.
 
@@ -141,6 +154,14 @@ Combine all analysis results into a single output format (JSONL or CSV) per arti
 - Final output must be a single file containing all analyses — no intermediate files required unless using batch mode
 - Output JSON keys should remain in Czech to match project convention
 
-### Phase 7: Update documentation
+### Phase 8: Update documentation
 
 Update `README.md` with newly added functionality from previous phases. 
+
+### Phase 9: Review of Efficiency of BlueSky part of the project
+
+Similarly to efficiency check from phase 4, we are going to look into BlueSky part of the project. Potentially we are working with hundreds or even thousands of the BlueSky's posts, which may lead to lot of calling to the models. We need to analyze existing code in order to identify possible improvements.
+
+It is important that model caching is used as much as possible - look for repeated initializations of the models. For various languages different models will probably be needed. So we can't limit ourselves to single model.
+
+What we can do is to manipulate with these models smartly for example by sorting loaded JSON objects using language which would allow us to limit number of initializations to number of languages in JSON multiplied by number of analyses we are performing (NER, sentiment analysis and disinformation detection)

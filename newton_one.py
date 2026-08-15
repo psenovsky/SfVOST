@@ -23,6 +23,41 @@ import json                                                   # serializace JSON
 import os                                                     # operace se systémem
 from datetime import datetime                                 # práce s daty
 
+# Import analyzátorů malých modelů (Phase 3)
+from config_loader import ConfigLoader                        # čtení config.ini
+
+# NER a Sentiment imports – Phase 4: commented out, kept for reference only
+try:
+    from src.ner_spacy import ner_spacy                       # NER via spaCy (commented out - Phase 4 focus: dezinformace)
+except ImportError:
+    ner_spacy = None                                          # type: ignore
+
+try:
+    from src.sentiment_Czert_B import sentiment_Czert_B       # Sentiment via Czert-B (commented out - Phase 4 focus: dezinformace)
+except ImportError:
+    sentiment_Czert_B = None                                  # type: ignore
+
+from transformers.pipelines import pipeline as hf_pipeline     # Disinformation detection — OPTIMIZED in Phase 4
+
+# Singleton cache pro inicializaci modelů jednou (Phase 4 – optimalizace API volání)
+_MODEL_CACHE = {
+    "ner": None,                # spaCy NER instance
+    "sentiment": None,          # Czert-B pipeline instance  
+    "dezinformace": None,       # bart-large-mnli zero-shot classifier (WORST OFFENDER - optimized here)
+}
+
+
+def _get_model(model_key: str):
+    """Vrátí singleton instanci modelu — inicializuje se pouze jednou."""
+    if _MODEL_CACHE[model_key] is not None:
+        return _MODEL_CACHE[model_key]
+
+
+# Konfigurace Phase 4 – optimalizace API volání
+_cfg = ConfigLoader()
+_BATCH_SIZE = int(_cfg.get_int("newton_one", "batch_size", fallback=50))
+
+
 
 # Unicode znaky, které by mohly být mezernatami v číslech (např. U+00A0 nbsp, U+2007 thin space)
 UNICODE_WHITESPACE = "\xa0\u2007\u2008\u2009\u200a\u205f\u3000"
@@ -203,8 +238,178 @@ def ulozit_jsonl(radky: list[dict[str, str]], cesta_output: str) -> int:
                 bar = "█" * filled + "░" * (50 - filled)
                 print(f"\r{bar} {count}/{total} ({percent:.0f}%)", end="")
 
-    print()  # nový řádek po progress baru    print(f"✅ Zapsáno {count} řádků do souboru {cesta_output}")
+    print()
     return count
+
+
+# =============================================================================
+# Funkce pro analýzu malými modely (Phase 3 – NER_SM, Sentiment_SM, Dezinformace)
+# =============================================================================
+
+def _detect_jazyk_zeme(zeme: str | None) -> str:
+    """
+    Určí jazyk na základě sloupce Země.
+
+    Parametry
+    ----------
+    zeme : str nebo None
+        Hodnota ze sloupce Země (např. 'CZ', 'US', 'SK').
+
+    Vrací
+    -----
+    str
+        Kód jazyka pro spaCy ('cs' nebo 'en').
+    """
+    if not zeme:
+        return "cs"  # výchozí čeština
+    zeme = zeme.strip().upper()
+    if zeme in ("CZ", "CZE"):
+        return "cs"
+    return "en"  # ostatní jazyky → angličtina (fallback)
+
+
+# --- Phase 4 OPTIMIZACE ---
+# NER a Sentiment_SM jsou vymezena jako commented out – focus na dezinformace
+
+def _analizovat_ner_sm(text: str, zeme: str | None = "") -> list[dict]:
+    """
+    Provede NER pomocí spaCy pro daný text. (Phase 4: commentováno pro optimalizaci API)
+
+    Parametry
+    ----------
+    text : str
+        Text k analýze (sloupec Plné znění).
+    zeme : str nebo None
+        Hodnota ze sloupce Země pro detekci jazyka.
+
+    Vrací
+    -----
+    list[dict]
+        Seznam entit ve formátu [{'word': '<entita>', 'group': '<typ>'}].
+        Pokud je text prázdný, vrátí prázdný seznam.
+    """
+    if not text:
+        return []
+
+    # Model inicializován pouze jednou díky _init_ner_analyzer() singletonu
+    analyzer = _get_model("ner")  # type: ignore
+    lang = _detect_jazyk_zeme(zeme)
+
+    try:
+        entities = analyzer.ner(text, lang=lang)
+        return [{"word": e["slovo"], "group": e["skupina"]} for e in entities]
+    except Exception as exc:
+        print(f"⚠️ Chyba NER (small model) pro text: {exc}")
+        return []
+
+
+def _analizovat_sentiment_sm(text: str, zeme: str | None = "") -> dict:
+    """
+    Provede sentiment analýzu pomocí Czert-B pro daný text. (Phase 4: commentováno pro optimalizaci API)
+
+    Parametry
+    ----------
+    text : str
+        Text k analýze (sloupec Plné znění).
+    zeme : str nebo None
+        Hodnota ze sloupce Země pro detekci jazyka.
+
+    Vrací
+    -----
+    dict
+        Sentiment výsledek ve formátu:
+        {'label': '<predikovaná hodnota>', 'score': <float>,
+         'sentiment': '<negativní|pozitivní|neutrální>'}
+        Pokud je text prázdný, vrátí prázdný slovník.
+    """
+    if not text:
+        return {}
+
+    # Model inicializován pouze jednou díky _init_sentiment_analyzer() singletonu
+    analyzer = _get_model("sentiment")  # type: ignore
+
+    try:
+        result = analyzer.sentiment(text)
+        return {
+            "label": result.get("label", ""),
+            "score": float(result.get("score", 0.0)),
+            "sentiment": result.get("sentiment", "").lower(),
+        }
+    except Exception as exc:
+        print(f"⚠️ Chyba sentiment (Czert-B) pro text: {exc}")
+        return {}
+
+
+def _analizovat_dezinformace_batch(radky: list[dict[str, str]]) -> dict[int, dict]:
+    """
+    Provede batch detekci dezinformací pro VŠECH řádků najednou.
+
+    Parametry
+    ----------
+    radky : list[dict[str, str]]
+        Seznam přetvořených řádků CSV.
+
+    Vrací
+    -----
+    dict[int, dict]
+        Výsledek pro každý řádek indexovaný podle pozice v seznamu:
+        {index: {'label': '...', 'score': 0.0}, ...}
+    """
+    # Accumulace všech textů najednou (batch processing)
+    texts = []
+    indices = []
+    for idx, r in enumerate(radky):
+        plne_znani = r.get("Plné znění", "")
+        anotace = r.get("Anotace", "").strip() if not plne_znani else ""
+        text_pro_analyzi = plne_znani or anotace
+        if text_pro_analyzi:
+            texts.append(text_pro_analyzi)
+            indices.append(idx)
+
+    if not texts:
+        return {}
+
+    # Inicializace modelu pouze JEDNOU (singleton pattern - Phase 4 OPTIMIZACE)
+    detekce = _get_model("dezinformace")  # type: ignore
+    labels = ["fake news", "reliable news"]
+
+    try:
+        results = detekce(texts, candidate_labels=labels)
+        out = {}
+        for idx, res in zip(indices, results):
+            out[idx] = {
+                "label": res["labels"][0],
+                "score": float(res["scores"][0]),
+            }
+        return out
+    except Exception as exc:
+        print(f"⚠️ Chyba dezinformace detekce (batch) pro {len(texts)} textů: {exc}")
+        return {}
+
+
+def _init_ner_analyzer():
+    """Inicializace NER analyzátoru (spaCy) — volat pouze jednou."""
+    if _MODEL_CACHE["ner"] is None:
+        print("⚙️ Inicializuji spaCy NER model (jednou)...")
+        _MODEL_CACHE["ner"] = ner_spacy()
+
+
+def _init_sentiment_analyzer():
+    """Inicializace sentiment analyzátoru (Czert-B) — volat pouze jednou."""
+    if _MODEL_CACHE["sentiment"] is None:
+        print("⚙️ Inicializuji Czert-B sentiment model (jednou)...")
+        _MODEL_CACHE["sentiment"] = sentiment_Czert_B()
+
+
+def _init_dezinformace_analyzer():
+    """Inicializace dezinformačního detektoru (bart-large-mnli) — volat pouze jednou."""
+    if _MODEL_CACHE["dezinformace"] is None:
+        print("⚙️ Inicializuji BART zero-shot classifier (jednou, pro všechny řádky)...")
+        _MODEL_CACHE["dezinformace"] = hf_pipeline(
+            "zero-shot-classification", model="facebook/bart-large-mnli"
+        )
+
+
 
 
 # =============================================================================
@@ -241,8 +446,42 @@ def main():
         print("⚠️ Žádné řádky k zpracování.")
         exit(0)
 
-    # Přetvoření řádků
-    vysledky = [pretvorit_radku(r) for r in radky]
+    # =============================================================================
+    # Phase 4 OPTIMIZACE: Inicializace modelů JEDNOU (singleton pattern)
+    # =============================================================================
+    _init_ner_analyzer()
+    _init_sentiment_analyzer()
+    _init_dezinformace_analyzer()
+
+    print(f"\n⚙️ Phase 4 OPTIMIZACE: Modely inicializovány jednou (singleton pattern).")
+    print(f"   Batch size dezinformace: {_BATCH_SIZE} textů najednou.")
+    print()
+
+    # =============================================================================
+    # Phase 3 – Analýza každého řádku
+    # =============================================================================
+    vysledky = []
+    for i, r in enumerate(radky):
+        vysledek = pretvorit_radku(r)
+
+        # Text pro analýzu: priorita Plné znění > Anotace
+        plne_znani = vysledek.get("Plné znění", "")
+        anotace = vysledek.get("Anotace", "").strip() if not plne_znani else ""
+        text_pro_analyzi = plne_znani or anotace
+        zeme = vysledek.get("Země", "")
+
+        # NER_SM (Phase 4: commentováno – focus na dezinformace)
+        # if text_pro_analyzi:
+        #     vysledek["NER_SM"] = _analizovat_ner_sm(text_pro_analyzi, zeme)
+
+        # Sentiment_SM (Phase 4: commentováno – focus na dezinformace)
+        # if text_pro_analyzi:
+        #     vysledek["Sentiment_SM"] = _analizovat_sentiment_sm(text_pro_analyzi, zeme)
+
+        # Dezinformace – OPTIMIZACE Phase 4 (batch processing + singleton)
+        vysledek["Dezinformace"] = _analizovat_dezinformace_batch(radky)[i] or {}
+
+        vysledky.append(vysledek)
 
     # Zápis do JSONL
     ulozit_jsonl(vysledky, args.output)
