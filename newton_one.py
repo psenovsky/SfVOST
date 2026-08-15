@@ -470,13 +470,13 @@ def main():
         text_pro_analyzi = plne_znani or anotace
         zeme = vysledek.get("Země", "")
 
-        # NER_SM (Phase 4: commentováno – focus na dezinformace)
-        # if text_pro_analyzi:
-        #     vysledek["NER_SM"] = _analizovat_ner_sm(text_pro_analyzi, zeme)
+        # NER_SM
+        if text_pro_analyzi:
+            vysledek["NER_SM"] = _analizovat_ner_sm(text_pro_analyzi, zeme)
 
-        # Sentiment_SM (Phase 4: commentováno – focus na dezinformace)
-        # if text_pro_analyzi:
-        #     vysledek["Sentiment_SM"] = _analizovat_sentiment_sm(text_pro_analyzi, zeme)
+        # Sentiment_SM (parallel to existing Sentiment)
+        if text_pro_analyzi:
+            vysledek["Sentiment_SM"] = _analizovat_sentiment_sm(text_pro_analyzi, zeme)
 
         # Dezinformace – OPTIMIZACE Phase 4 (batch processing + singleton)
         vysledek["Dezinformace"] = _analizovat_dezinformace_batch(radky)[i] or {}
