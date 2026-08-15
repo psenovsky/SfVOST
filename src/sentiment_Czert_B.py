@@ -9,7 +9,12 @@ Autor: Pavel Šenovský
 Datum: 2025-06-27
 """
 
-from transformers.pipelines import pipeline             # NLP
+from transformers import (
+    AutoConfig,
+    AutoModelForMaskedLM,
+    AutoTokenizer,
+    pipeline
+)
 from src.ISentiment import ISentiment
 
 # from transformers import AutoModel
@@ -24,7 +29,18 @@ class sentiment_Czert_B(ISentiment):
         Inicializace modelu Czert-B, pokud ještě nebyl načten
         """
         print("Inicializace modelu Czert-B.....")
-        self.nlp = pipeline("fill-mask", model="UWB-AIR/Czert-B-base-cased", tie_word_embeddings=False)
+        config = AutoConfig.from_pretrained("UWB-AIR/Czert-B-base-cased")
+        config.tie_word_embeddings = False
+        model = AutoModelForMaskedLM.from_pretrained(
+            "UWB-AIR/Czert-B-base-cased",
+            config=config
+        )
+        tokenizer = AutoTokenizer.from_pretrained("UWB-AIR/Czert-B-base-cased")
+        self.nlp = pipeline(
+            "fill-mask",
+            model=model,
+            tokenizer=tokenizer
+        )
         print("✅ Model úspěšně inicializován")
 
     def sentiment(self, text):
