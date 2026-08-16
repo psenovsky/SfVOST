@@ -340,51 +340,51 @@ def _analizovat_sentiment_sm(text: str, zeme: str | None = "") -> dict:
         return {}
 
 
-def _analizovat_dezinformace_batch(radky: list[dict[str, str]]) -> dict[int, dict]:
+def _analizovat_dezinformace_batch(radky: list[dict[str, str]]) -> list[dict]:
     """
     Provede batch detekci dezinformací pro VŠECH řádků najednou.
 
     Parametry
     ----------
     radky : list[dict[str, str]]
-        Seznam přetvořených řádků CSV.
+        Seznam přetvořených řádků CSV (musí mít stejný počet jako původní řádky).
 
     Vrací
     -----
-    dict[int, dict]
-        Výsledek pro každý řádek indexovaný podle pozice v seznamu:
-        {index: {'label': '...', 'score': 0.0}, ...}
+    list[dict]
+        Výsledek v pořadí odpovídajícím vstupním radkám:
+        [{'label': '...', 'score': 0.0}, ...]
+        Prázdný slovník pro řádky s prázdným textem.
     """
     # Accumulace všech textů najednou (batch processing)
     texts = []
-    indices = []
-    for idx, r in enumerate(radky):
+    for r in radky:
         plne_znani = r.get("Plné znění", "")
         anotace = r.get("Anotace", "").strip() if not plne_znani else ""
         text_pro_analyzi = plne_znani or anotace
-        if text_pro_analyzi:
-            texts.append(text_pro_analyzi)
-            indices.append(idx)
-
-    if not texts:
-        return {}
+        texts.append(text_pro_analyzi)
 
     # Inicializace modelu pouze JEDNOU (singleton pattern - Phase 4 OPTIMIZACE)
     detekce = _get_model("dezinformace")  # type: ignore
     labels = ["fake news", "reliable news"]
 
     try:
-        results = detekce(texts, candidate_labels=labels)
-        out = {}
-        for idx, res in zip(indices, results):
-            out[idx] = {
+        # GPU/MPS optimalizace: batch_size=len(texts) umožňuje paralelní
+        # zpracování všech textů najednou na MPS (Apple Silicon) nebo CUDA
+        results = detekce(
+            texts, candidate_labels=labels, batch_size=len(texts) if len(texts) > 1 else 1
+        )
+        out = []
+        for res in results:
+            out.append({
                 "label": res["labels"][0],
                 "score": float(res["scores"][0]),
-            }
+            })
         return out
     except Exception as exc:
         print(f"⚠️ Chyba dezinformace detekce (batch) pro {len(texts)} textů: {exc}")
-        return {}
+        # Vrací prázdný výsledek s délkou odpovídající počtu vstupních řádků
+        return [{"label": "", "score": 0.0} for _ in texts]
 
 
 def _init_ner_analyzer():
@@ -478,8 +478,9 @@ def main():
         if text_pro_analyzi:
             vysledek["Sentiment_SM"] = _analizovat_sentiment_sm(text_pro_analyzi, zeme)
 
-        # Dezinformace – OPTIMIZACE Phase 4 (batch processing + singleton)
-        vysledek["Dezinformace"] = _analizovat_dezinformace_batch(radky)[i] or {}
+        # Dezinformace – OPTIMIZACE Phase 4 (GPU/MPS batch + singleton)
+        dez_res = _analizovat_dezinformace_batch(radky)
+        vysledek["Dezinformace"] = dez_res[i] if i < len(dez_res) else {}
 
         vysledky.append(vysledek)
 
