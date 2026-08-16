@@ -33,16 +33,16 @@ except ImportError:
     ner_spacy = None                                          # type: ignore
 
 try:
-    from src.sentiment_Czert_B import sentiment_Czert_B       # Sentiment via Czert-B (commented out - Phase 4 focus: dezinformace)
+    from src.sentiment_BERT_multi import sentiment_BERT_multi  # Sentiment via BERT multi-lang
 except ImportError:
-    sentiment_Czert_B = None                                  # type: ignore
+    sentiment_BERT_multi = None                               # type: ignore
 
 from transformers.pipelines import pipeline as hf_pipeline     # Disinformation detection — OPTIMIZED in Phase 4
 
 # Singleton cache pro inicializaci modelů jednou (Phase 4 – optimalizace API volání)
 _MODEL_CACHE = {
     "ner": None,                # spaCy NER instance
-    "sentiment": None,          # Czert-B pipeline instance  
+    "sentiment": None,          # nlptown/bert-base-multilingual-uncased-sentiment text-classification
     "dezinformace": None,       # bart-large-mnli zero-shot classifier (WORST OFFENDER - optimized here)
 }
 
@@ -303,16 +303,14 @@ def _analizovat_ner_sm(text: str, zeme: str | None = "") -> list[dict]:
         return []
 
 
-def _analizovat_sentiment_sm(text: str, zeme: str | None = "") -> dict:
+def _analizovat_sentiment_sm(text: str) -> dict:
     """
-    Provede sentiment analýzu pomocí Czert-B pro daný text. (Phase 4: commentováno pro optimalizaci API)
+    Provede sentiment analýzu pomocí BERT multi-lang (nlptown/bert-base-multilingual-uncased-sentiment).
 
     Parametry
     ----------
     text : str
         Text k analýze (sloupec Plné znění).
-    zeme : str nebo None
-        Hodnota ze sloupce Země pro detekci jazyka.
 
     Vrací
     -----
@@ -321,14 +319,18 @@ def _analizovat_sentiment_sm(text: str, zeme: str | None = "") -> dict:
         {'label': '<predikovaná hodnota>', 'score': <float>,
          'sentiment': '<negativní|pozitivní|neutrální>'}
         Pokud je text prázdný, vrátí prázdný slovník.
+
+    Poznámka ke skóre:
+        Skóre představuje jistotu modelu v predikci dané sentimentové kategorie (1-5 star rating).
+        Nemá přímou interpretaci jako intenzita sentimentu — je to pravděpodobnost, že text
+        spadá do predikované kategorie. Např. score=0.71 znamená vysokou jistotu, že text je
+        negativní, ne nutně silný negativní sentiment.
     """
     if not text:
         return {}
 
-    # Model inicializován pouze jednou díky _init_sentiment_analyzer() singletonu
-    analyzer = _get_model("sentiment")  # type: ignore
-
     try:
+        analyzer = _get_model("sentiment")  # type: ignore
         result = analyzer.sentiment(text)
         return {
             "label": result.get("label", ""),
@@ -336,7 +338,7 @@ def _analizovat_sentiment_sm(text: str, zeme: str | None = "") -> dict:
             "sentiment": result.get("sentiment", "").lower(),
         }
     except Exception as exc:
-        print(f"⚠️ Chyba sentiment (Czert-B) pro text: {exc}")
+        print(f"⚠️ Chyba sentiment (BERT multi) pro text: {exc}")
         return {}
 
 
@@ -395,11 +397,14 @@ def _init_ner_analyzer():
 
 
 def _init_sentiment_analyzer():
-    """Inicializace sentiment analyzátoru (Czert-B) — volat pouze jednou."""
-    if _MODEL_CACHE["sentiment"] is None:
-        print("⚙️ Inicializuji Czert-B sentiment model (jednou)...")
-        _MODEL_CACHE["sentiment"] = sentiment_Czert_B()
+    """Inicializace sentiment analyzátoru (BERT multi-lang).
 
+    Model má vlastní lazy-load v src/sentiment_BERT_multi.py, takže tato funkce slouží
+    pouze pro konzistenci inicializačního procesu.
+    """
+    if _MODEL_CACHE["sentiment"] is None:
+        print("⚙️ Inicializuji BERT multi-lang sentiment model...")
+        _MODEL_CACHE["sentiment"] = sentiment_BERT_multi()
 
 def _init_dezinformace_analyzer():
     """Inicializace dezinformačního detektoru (bart-large-mnli) — volat pouze jednou."""
@@ -476,7 +481,7 @@ def main():
 
         # Sentiment_SM (parallel to existing Sentiment)
         if text_pro_analyzi:
-            vysledek["Sentiment_SM"] = _analizovat_sentiment_sm(text_pro_analyzi, zeme)
+            vysledek["Sentiment_SM"] = _analizovat_sentiment_sm(text_pro_analyzi)
 
         # Dezinformace – OPTIMIZACE Phase 4 (GPU/MPS batch + singleton)
         dez_res = _analizovat_dezinformace_batch(radky)

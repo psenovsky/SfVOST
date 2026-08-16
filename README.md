@@ -86,7 +86,7 @@ Závislosti jsou definovány v souboru `pyproject.toml` a zahrnují:
 | streamlit      | >=1.54.0 | Webové rozhraní pro vizualizaci                                           |
 | torch          | >=2.10.0 | Framework pro strojové učení (základ pro modely NER a sentimentu)          |
 | tqdm           | >=4.67.3 | Zobrazení průběhu zpracování                                              |
-| transformers   | >=5.1.0  | Knihovna pro práci s modely NLP (BERT, Czert-B, BART)                    |
+| transformers   | >=5.1.0  | Knihovna pro práci s modely NLP (BERT, BART)                    |
 
 ## Konfigurace a nastavení
 
@@ -298,15 +298,13 @@ Technicky skript přidá informaci o sentimentu k existujícím záznamům před
 ```
 
 - "label" obsahuje predikované hodnocení podle použitého modelu strojového učení. Různé modely poskytují různé výsledky
-- "score" je hodnota konfidence modelu strojového učení v intervalu [0, 1]
+- "score" je hodnota konfidence modelu v intervalu [0, 1] — představuje jistotu modelu v predikci dané sentimentové kategorie, **nikoliv intenzitu sentimentu**. Např. score=0.71 znamená vysokou jistotu, že text je negativní, ne nutně silný negativní sentiment
 - "sentiment" je slovní vyjádření sentimentu v češtině (negativní, neutrální, pozitivní)
 
-Např. model BERT base v label používá hvězdičkovou notaci (1 - 5 hvězdiček), ale model Czert-B vrací přímo slovní hodnocení (negativní, neutrální, pozitivní), tedy pro tento model je label vlastně stejný jako sentiment, ovšem s tím, že u sentimentu je vynuceno použití malých písmen.
-
-V současnosti jsou používány následující modely:
-- pro jazyky: en, nl, de, fr, it, es se používá https://huggingface.co/nlptown/bert-base-multilingual-uncased-sentiment.
-- pro češtinu (cs) se používá: https://huggingface.co/UWB-AIR/Czert-B-base-cased
-- ostatní jazyky v současnosti nejsou podporovány, ale principiálně je není problém v případě zájmu doplnit
+V současnosti je používán jeden univerzální model pro všechny jazyky: https://huggingface.co/nlptown/bert-base-multilingual-uncased-sentiment. Tento BERT multi-lang model podporuje angličtinu (en), holandštinu (nl), němčinu (de), francouzštinu (fr), italsku (it) a španělštinu (es). Pro češtinu je model kalibrovaný na trénovacích datech včetně české verze Wikipedia. Model vrací hodnoty od 1 do 5 hvězdiček, které jsou následně mapovány:
+- 1–2 hvězdičky → negativní
+- 3 hvězdičky → neutrální  
+- 4–5 hvězdiček → pozitivní
 
 **Model BERT base**
 
@@ -323,11 +321,7 @@ Model podporuje řadu jazyků, ale čeština nebo slovenština mezi nimi nejsou.
 
 Přesnost znamená, jak model přesně trefil hodnocení hvězdiček provedené člověkem. Off-by-1 je pak představuje procentu ve kterém model byl zcela přesný nebo se spletl o 1 hvězdičku. Hodnocení modelem tedy z tohoto pohledu bylo podobné.
 
-**Model Czert-B**
 
-Je taktéž modelem, který je založen na BERT, ale je trénován jen a pouze na datech v češtině, včetně české verze Wikipedia, a řady dalších zdrojů.
-
-Trénovací množina je velmi robustní, avšak čeština je velmi složitý jazyk a tak je výkonnost z určitého pohledu horší. Autoři uvádějí okolo 80 % (exact přesnost). Vzhledem k odlišnému způsobu práce modelu, není off-by-1 metriku možno změřit.
 
 ## Detekce entit (NER)
 
@@ -588,7 +582,7 @@ Před použitím prostudujte licence k jednotlivým modelům. Dle způsobu, jak�
 | NER          | SlavicNLP/slavicner-ner-cross-topic-large        | https://huggingface.co/SlavicNLP/slavicner-ner-cross-topic-large        | Apache 2.0      |
 | NER          | dbmdz/bert-large-cased-finetuned-conll03-english | https://huggingface.co/dbmdz/bert-large-cased-finetuned-conll03-english | ?               |
 | sentiment    | nlptown/bert-base-multilingual-uncased-sentiment | https://huggingface.co/nlptown/bert-base-multilingual-uncased-sentiment | MIT             |
-| sentiment    | UWB-AIR/Czert-B-base-cased                       | https://huggingface.co/UWB-AIR/Czert-B-base-cased                       | CC BY-NC-SA 4.0 |
+| sentiment    | nlptown/bert-base-multilingual-uncased-sentiment | https://huggingface.co/nlptown/bert-base-multilingual-uncased-sentiment | MIT             |
 | dezinformace | facebook/bart-large-mnli                         | https://huggingface.co/facebook/bart-large-mnli                         | MIT             |
 
 (Každý z modelů je licencován samostatně.)
