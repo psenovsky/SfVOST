@@ -29,6 +29,8 @@ Nový prototyp je založen na následujících modulech:
 4. **detekce potenciálních dezinformací (dezinformace.py)** - detekce potenciálních dezinformací příspěvků na základě metod strojového učení
 5. **export do Parquet (export-cli.py)** - konverze příspěvků z formátu JSONL do formátu Parquet (Apache Arrow) pro analytické účely
 6. **(plán) import dat do DB (DBPush.py)** - importuje data z sociálních sítí do databáze
+7. **analýza NER, sentiment a dezinformace pomocí LLM (SfVOST_LLM.py)**
+8. **GUI (run_gui.py)** - základní rozhraní pro konfiguraci a ovládání jednotlivých modulů projektu
 7. **dashboard** - v současnosti realizováno pomocí RMarkdown (předtím, než se ustálí funkcionalita, která by měla být obsažena v této části)
 
 V budoucnu je pak plánováno přidání další vrstvy aplikace, která by měla umožnit jednodušší orchestraci ovládání jednotlivých modulů pomocí uživatelsky přívětivého rozhraní.
@@ -581,7 +583,6 @@ Před použitím prostudujte licence k jednotlivým modelům. Dle způsobu, jak�
 | ------------ | ------------------------------------------------ | ----------------------------------------------------------------------- | --------------- |
 | NER          | SlavicNLP/slavicner-ner-cross-topic-large        | https://huggingface.co/SlavicNLP/slavicner-ner-cross-topic-large        | Apache 2.0      |
 | NER          | dbmdz/bert-large-cased-finetuned-conll03-english | https://huggingface.co/dbmdz/bert-large-cased-finetuned-conll03-english | ?               |
-| sentiment    | nlptown/bert-base-multilingual-uncased-sentiment | https://huggingface.co/nlptown/bert-base-multilingual-uncased-sentiment | MIT             |
 | sentiment    | nlptown/bert-base-multilingual-uncased-sentiment | https://huggingface.co/nlptown/bert-base-multilingual-uncased-sentiment | MIT             |
 | dezinformace | facebook/bart-large-mnli                         | https://huggingface.co/facebook/bart-large-mnli                         | MIT             |
 
