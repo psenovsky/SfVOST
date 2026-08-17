@@ -498,7 +498,8 @@ def _analizovat_llm(text: str, zeme: str | None = "") -> dict:
                     "FAC": ["Letiště Václava Havla"]
                   }},
                   "sentiment": "pozitivní | neutrální | negativní",
-                  "dezinformace": "ano | ne"
+                  "dezinformace": "ano | ne",
+                  "klíčová slova": ["tornádo", "riziko"]
                 }}
 
                 Pravidla pro zpracování:
@@ -524,7 +525,8 @@ def _analizovat_llm(text: str, zeme: str | None = "") -> dict:
 
                 2. Sentiment: Vyber právě jednu hodnotu: "pozitivní", "neutrální" nebo "negativní".
                 3. Dezinformace: Vyhodnoť pravdivost na základě znepokojivého tónu, konspirací či obecných faktů. Vyber "ano" nebo "ne".
-                4. Výstup: Vrať výhradně čistý JSON bez jakýchkoliv komentářů nebo omáčky kolem."
+                4. Klíčová slova: Identifikuj všechna klíčová slova charakterizující hodnocený příspěvek. Klíčových slov by nemělo být více než 10.
+                5. Výstup: Vrať výhradně čistý JSON bez jakýchkoliv komentářů nebo omáčky kolem."
                 """
             )
         },
@@ -574,6 +576,7 @@ def _analizovat_llm(text: str, zeme: str | None = "") -> dict:
         "ner": entities,
         "sentiment": post.get("sentiment", "").lower(),
         "dezinformace": post.get("dezinformace", "").lower(),
+        "klíčová slova": post.get("klíčová slova", []),
     }
 
 
@@ -671,6 +674,7 @@ def main():
             vysledek["NER_LLM"] = llm_result.get("ner", {})
             vysledek["sentiment_LLM"] = llm_result.get("sentiment", "")
             vysledek["dezinformace_LLM"] = llm_result.get("dezinformace", "")
+            vysledek["klíčová slova_LLM"] = llm_result.get("klíčová slova", "")
 
         vysledky.append(vysledek)
 
