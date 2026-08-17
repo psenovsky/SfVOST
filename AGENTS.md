@@ -26,8 +26,8 @@ The development will be realized in the phases. We will work on single phase at 
 
 - [x] Phase 1: Plan creation
 - [x] Phase 2: CSV ingestion and preprocessing
-- [ ] Phase 3: Analysis pipeline integration  - small models
-- [ ] Phase 4: Optimization of API calls
+- [x] Phase 3: Analysis pipeline integration  - small models
+- [x] Phase 4: Optimization of API calls
 - [ ] Phase 5: Analysis pipeline integration - LLM
 - [ ] Phase 6: Keywords extraction
 - [ ] Phase 7: Output consolidation and export
@@ -113,11 +113,10 @@ Focus on efficiency problems, caching, and repeted initializations of the models
 
 ### Phase 5: Analysis pipeline integration - LLM
 
-We will continue our work from phase 3. We will be using LLM for it now. Look into `data/llm.py` for implementation detail.
+We will continue our work from phase 3. We will be using LLM for it now. Look into `data/llm.py` for implementation details.
 
 #### Tasks
 - Implement  LLM-based sentiment analysis and NER using `config.ini [LLM]` settings; if endpoint is unavailable, skip gracefully with warning
-
 
 #### Design notes
 - since the media articles, posts, etc can be long it makes no sense to use batch processing

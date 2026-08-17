@@ -19,8 +19,10 @@ Datum: 2026-08-14
 """
 import argparse                                              # argumenty příkazového řádku
 import csv                                                    # čtení CSV souborů
+import configparser                                           # práce s config.ini
 import json                                                   # serializace JSON
 import os                                                     # operace se systémem
+import urllib.request                                          # HTTP volání do lokálního LLM endpointu
 from datetime import datetime                                 # práce s daty
 
 # Import analyzátorů malých modelů (Phase 3)
@@ -51,6 +53,37 @@ def _get_model(model_key: str):
     """Vrátí singleton instanci modelu — inicializuje se pouze jednou."""
     if _MODEL_CACHE[model_key] is not None:
         return _MODEL_CACHE[model_key]
+
+# Konfigurace LLM endpointu (Phase 5 – analýza pomocí lokálního LLM)
+_llm_config = configparser.RawConfigParser()
+_llm_config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.ini")
+
+
+def _check_llm_config():
+    """Vrátí dict s LLM konfigurací nebo chybovou zprávu."""
+    if not os.path.exists(_llm_config_path):
+        return {
+            "valid": False,
+            "message": f"❌ Konfigurační soubor {_llm_config_path} neexistuje",
+        }
+    _llm_config.read(_llm_config_path)
+    if "LLM" not in _llm_config:
+        return {
+            "valid": False,
+            "message": f"❌ V konfiguračním souboru chybí sekce [LLM]",
+        }
+    return {
+        "valid": True,
+        "host": _llm_config["LLM"]["host"],
+        "port": int(_llm_config["LLM"]["port"]),
+        "model": _llm_config["LLM"]["model"],
+        "temperature": float(_llm_config["LLM"]["temperature"]),
+        "max_tokens": int(_llm_config["LLM"]["max_tokens"]),
+    }
+
+
+# Maximum retry count pro LLM API volání (Phase 5)
+MAX_LLM_RETRY = 3
 
 
 # Konfigurace Phase 4 – optimalizace API volání
@@ -416,6 +449,127 @@ def _init_dezinformace_analyzer():
 
 
 
+# =============================================================================
+# Phase 5 – LLM analýza (sentiment_LLM, NER_LLM)
+# =============================================================================
+
+def _analizovat_llm(text: str, zeme: str | None = "") -> dict:
+    """
+    Provede NER a sentiment analýzu pomocí lokálního LLM v jednom HTTP volání.
+
+    Prompt je odvozen od src/llm.py (stejné system message, stejná struktura JSON odpovědi).
+    URL endpoint: http://{host}:{port}/v1/chat/completions  — OpenAI kompatibilní přístupový bod
+
+    Parametry
+    ----------
+    text : str
+        Text k analýze (sloupec Plné znění).
+    zeme : str nebo None
+        Hodnota ze sloupce Země pro detekci jazyka.
+
+    Vrací
+    -----
+    dict
+        {'ner': {...}, 'sentiment': '', 'text': '<odstřižený text>'}
+        Pokud je text prázdný, vrátí prázdný dict. Pokud endpoint není dostupný,
+        vrátí chybovou zprávu s hodnotami na null/empty.
+    """
+    if not text:
+        return {"ner": {}, "sentiment": "", "text": ""}
+
+    cfg = _check_llm_config()
+    if not cfg["valid"]:
+        print(f"⚠️ NER_LLM/Sentiment_LLM: {cfg['message']}")
+        return {"ner": {}, "sentiment": "", "text": text[:2000]}
+
+    # Odstranit text nad maximální délku (LLM má limit)
+    trunc_limit = 20000
+    odstřiženy_text = text[:trunc_limit]
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Jsi expert na analýzu textu a lingvistiku. Tvým úkolem je analyzovat "
+                "příspěvky ze sociální sítě BlueSky.\n\n"
+                "Vrať výsledek VŽDY jako validní JSON pole (array), kde každý prvek odpovídá jednomu příspěvku v pořadí, v jakém byly zadány.\n"
+                "Kazdy prvek pole ma tuto strukturu:\n"
+                "{{\n"
+                "  \"preklad\": \"Text přeložený do češtiny. Pokud je originál v češtině, vrať jej beze změny.\",\n"
+                "  \"ner\": {\n"
+                "    \"PER\": [\"seznam osob\"],\n"
+                "    \"ORG\": [\"seznam organizací\"],\n"
+                "    \"LOC\": [\"seznam lokalit\"],\n"
+                "    \"GPE\": [\"seznam geopolitických entit\"],\n"
+                "    \"DATE\": [\"seznam dat\"],\n"
+                "    \"FAC\": [\"seznam zařízení/staveb\"]\n"
+                "  },\n"
+                "  \"sentiment\": \"pozitivní | neutrální | negativní\",\n"
+                "  \"dezinformace\": \"ano | ne\"\n"
+                "}}\n\n"
+                "Pravidla pro zpracování:\n"
+                "1. NER: Pokud v textu žádná entita daného typu není, vrať prázdný seznam [].\n"
+                "2. Sentiment: Vyber pouze jednu z nabízených možností.\n"
+                "3. Dezinformace: Vyhodnoť na základě obecně známých faktů a tónu příspěvku (např. očividné konspirační teorie).\n"
+                "4. JSON: Neuváděj žádné úvodní řeči ani vysvětlení, pouze čisté JSON pole.\n"
+                "5. Počet prvků v odpovědi MUSÍ být přesně 1."
+            ),
+        },
+    ]
+
+    # URL podle OpenAI kompatibilního schématu: http://{host}:{port}/v1/chat/completions
+    url = f"http://{cfg['host']}:{cfg['port']}/v1/chat/completions"
+
+    payload = {
+        "model": cfg["model"],
+        "messages": [{"role": "user", "content": messages[0]["content"]}],
+        "max_tokens": cfg["max_tokens"],
+        "temperature": cfg["temperature"],
+    }
+
+    try:
+        req = urllib.request.Request(
+            url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=300) as response:
+            result = json.loads(response.read().decode())
+            obsah = result["choices"][0]["message"]["content"].strip()
+
+            if obsah.startswith("```"):
+                řádky = obsah.split("\n")
+                obsah = "\n".join(řádky[1:-1])
+
+            výsledek = json.loads(obsah)
+        post = výsledek[0] if isinstance(výsledek, list) and len(výsledek) > 0 else {}
+    except Exception as exc:
+        print(f"⚠️ Chyba NER_LLM/Sentiment_LLM pro text: endpoint neodpověděl nebo selhal ({exc})")
+        return {"ner": {}, "sentiment": "", "text": odstřiženy_text}
+
+    entities = {
+        "PER": post.get("ner", {}).get("PER", []),
+        "ORG": post.get("ner", {}).get("ORG", []),
+        "LOC": post.get("ner", {}).get("LOC", []),
+        "GPE": post.get("ner", {}).get("GPE", []),
+        "DATE": post.get("ner", {}).get("DATE", []),
+        "FAC": post.get("ner", {}).get("FAC", []),
+    }
+
+    return {
+        "text": odstřiženy_text,
+        "ner": entities,
+        "sentiment": post.get("sentiment", "").lower(),
+    }
+
+
+def _analizovat_ner_llm(text: str, zeme: str | None = "") -> dict:
+    """Provede NER pomocí lokálního LLM. (Phase 5 – nyní volá společnou funkci _analizovat_llm)"""
+    return _analizovat_llm(text, zeme)
+
+
+def _analizovat_sentiment_llm(text: str, zeme: str | None = "") -> dict:
+    """Provede sentiment analýzu pomocí lokálního LLM. (Phase 5 – nyní volá společnou funkci _analizovat_llm)"""
+    return _analizovat_llm(text, zeme)
+
 
 # =============================================================================
 # Hlavní funkce
@@ -452,20 +606,21 @@ def main():
         exit(0)
 
     # =============================================================================
-    # Phase 4 OPTIMIZACE: Inicializace modelů JEDNOU (singleton pattern)
+    # Phase 4 OPTIMIZACE: Inicializace modelů JEDNOU — ZAKOMENTOVÁNO pro testování LLM
+    # Není potřeba šahat na HuggingFace, pokud nepoužíváme její modely.
     # =============================================================================
-    _init_ner_analyzer()
-    _init_sentiment_analyzer()
-    _init_dezinformace_analyzer()
+    # _init_ner_analyzer()
+    # _init_sentiment_analyzer()
+    # _init_dezinformace_analyzer()
 
-    print(f"\n⚙️ Phase 4 OPTIMIZACE: Modely inicializovány jednou (singleton pattern).")
-    print(f"   Batch size dezinformace: {_BATCH_SIZE} textů najednou.")
+    print(f"\n⚙️ Phase 4 OPTIMIZACE: Zakomentováno pro testování LLM Phase 5.")
     print()
 
     # =============================================================================
-    # Phase 3 – Analýza každého řádku
+    # Phase 3 – Analýza každého řádku (malé modely) — ZAKOMENTOVÁNO pro testování LLM
     # =============================================================================
     vysledky = []
+    total = len(radky)  # pro signalizaci průběhu LLM výzvy
     for i, r in enumerate(radky):
         vysledek = pretvorit_radku(r)
 
@@ -475,17 +630,31 @@ def main():
         text_pro_analyzi = plne_znani or anotace
         zeme = vysledek.get("Země", "")
 
-        # NER_SM
-        if text_pro_analyzi:
-            vysledek["NER_SM"] = _analizovat_ner_sm(text_pro_analyzi, zeme)
+        # NER_SM (small model) — ZAKOMENTOVÁNO pro testování LLM Phase 5
+        # if text_pro_analyzi:
+        #     vysledek["NER_SM"] = _analizovat_ner_sm(text_pro_analyzi, zeme)
 
-        # Sentiment_SM (parallel to existing Sentiment)
-        if text_pro_analyzi:
-            vysledek["Sentiment_SM"] = _analizovat_sentiment_sm(text_pro_analyzi)
+        # Sentiment_SM (small model BERT multi-lang) — ZAKOMENTOVÁNO pro testování LLM Phase 5
+        # if text_pro_analyzi:
+        #     vysledek["Sentiment_SM"] = _analizovat_sentiment_sm(text_pro_analyzi)
 
-        # Dezinformace – OPTIMIZACE Phase 4 (GPU/MPS batch + singleton)
-        dez_res = _analizovat_dezinformace_batch(radky)
-        vysledek["Dezinformace"] = dez_res[i] if i < len(dez_res) else {}
+        # Dezinformace – OPTIMIZACE Phase 4 (GPU/MPS batch + singleton) — ZAKOMENTOVÁNO pro testování LLM Phase 5
+        # dez_res = _analizovat_dezinformace_batch(radky)
+        # vysledek["Dezinformace"] = dez_res[i] if i < len(dez_res) else {}
+
+        # =============================================================================
+        # Phase 5 – LLM analýza (sentiment_LLM, NER_LLM) – JEDNO volání na endpoint
+        # =============================================================================
+        percent = (i + 1) / total * 100
+        filled = int(percent / 2)
+        bar = "█" * filled + "░" * (50 - filled)
+        print(f"\r{bar} {i+1}/{total} ({percent:.0f}%)\n", end="")
+
+        if text_pro_analyzi:
+            llm_result = _analizovat_ner_llm(text_pro_analyzi, zeme)
+            vysledek["NER_LLM"] = llm_result.get("ner", {})
+            vysledek["sentiment_LLM"] = llm_result.get("sentiment", "")
+            vysledek["dezinformace_LLM"] = llm_result.get("dezinformace", "")
 
         vysledky.append(vysledek)
 
