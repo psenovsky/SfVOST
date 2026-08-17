@@ -250,28 +250,17 @@ def ulozit_jsonl(radky: list[dict[str, str]], cesta_output: str) -> int:
     # Zkontrolovat, zda soubor již existuje
     if os.path.exists(cesta_output):
         velkost_input = os.path.getsize(cesta_output)
-        if velkost_input == 0:
-            print(f"⚠️ Výstupní soubor {cesta_output} je prázdný, přepsu ho.")
-        else:
+        if velkost_input != 0:
             print(f"⚠️ Výstupní soubor {cesta_output} již existuje ({velkost_input} B). Přepisuji ho.")
 
     # Uložit
     count = 0
-    total = len(radky)
     with open(cesta_output, "w", encoding=JSONL_ENCODING) as f:
         for radka in radky:
             json_str = json.dumps(radka, ensure_ascii=False, sort_keys=True)
             f.write(json_str + "\n")
             count += 1
 
-            # Progress bar (50 znaků)
-            if count % 10 == 0 or count == total:
-                percent = count / total * 100
-                filled = int(percent / 2)
-                bar = "█" * filled + "░" * (50 - filled)
-                print(f"\r{bar} {count}/{total} ({percent:.0f}%)", end="")
-
-    print()
     return count
 
 
@@ -489,40 +478,66 @@ def _analizovat_llm(text: str, zeme: str | None = "") -> dict:
     messages = [
         {
             "role": "system",
-            "content": (
-                "Jsi expert na analýzu textu a lingvistiku. Tvým úkolem je analyzovat "
-                "příspěvky ze sociální sítě BlueSky.\n\n"
-                "Vrať výsledek VŽDY jako validní JSON pole (array), kde každý prvek odpovídá jednomu příspěvku v pořadí, v jakém byly zadány.\n"
-                "Kazdy prvek pole ma tuto strukturu:\n"
-                "{{\n"
-                "  \"preklad\": \"Text přeložený do češtiny. Pokud je originál v češtině, vrať jej beze změny.\",\n"
-                "  \"ner\": {\n"
-                "    \"PER\": [\"seznam osob\"],\n"
-                "    \"ORG\": [\"seznam organizací\"],\n"
-                "    \"LOC\": [\"seznam lokalit\"],\n"
-                "    \"GPE\": [\"seznam geopolitických entit\"],\n"
-                "    \"DATE\": [\"seznam dat\"],\n"
-                "    \"FAC\": [\"seznam zařízení/staveb\"]\n"
-                "  },\n"
-                "  \"sentiment\": \"pozitivní | neutrální | negativní\",\n"
-                "  \"dezinformace\": \"ano | ne\"\n"
-                "}}\n\n"
-                "Pravidla pro zpracování:\n"
-                "1. NER: Pokud v textu žádná entita daného typu není, vrať prázdný seznam [].\n"
-                "2. Sentiment: Vyber pouze jednu z nabízených možností.\n"
-                "3. Dezinformace: Vyhodnoť na základě obecně známých faktů a tónu příspěvku (např. očividné konspirační teorie).\n"
-                "4. JSON: Neuváděj žádné úvodní řeči ani vysvětlení, pouze čisté JSON pole.\n"
-                "5. Počet prvků v odpovědi MUSÍ být přesně 1."
-            ),
+            "content": ("""
+                Jsi expert na analýzu textu a lingvistiku. Tvým úkolem je provést detailní analýzu
+                příspěvků ze sociálních sítí a zpravodajství.
+
+                Pro každý příspěvek aktivně vyhledej a extrahuj všechny pojmenované entity (NER),
+                urči sentiment a vyhodnoť přítomnost dezinformací.
+
+                Vrať výsledek VŽDY jako validní JSON pole (array), kde každý prvek odpovídá jednomu příspěvku v pořadí zadaném na vstupu.
+
+                Struktura každého prvku v poli:
+                {{
+                  "ner": {{
+                    "PER": ["Petr Pavel"],"
+                    "ORG": ["Škoda Auto", "PČR"],"
+                    "LOC": ["Vysoké Tatry"],"
+                    "GPE": ["Česká republika", "Praha"],"
+                    "DATE": ["včera", "17. srpna"],"
+                    "FAC": ["Letiště Václava Havla"]
+                  }},
+                  "sentiment": "pozitivní | neutrální | negativní",
+                  "dezinformace": "ano | ne"
+                }}
+
+                Pravidla pro zpracování:
+
+                1. NER: Prohledej text a extrahuj všechna vlastní jména a specifické údaje do odpovídajících kategorií:
+                  - Nejprve identifikuj všechny pojmenované entity v textu.
+                  - Každou nalezenou entitu zařaď do odpovídající kategorie.
+                  - Entity uváděj přesně tak, jak se vyskytují v textu.
+                  - Duplicitní výskyty odstraň.
+                  - Pokud pro danou kategorii žádná entita neexistuje, vrať [].
+
+                 Kategorie NER:
+                   - PER: Jména lidí a osobností
+                   - ORG: Společnosti, firmy, instituce, úřady, spolky
+                   - LOC: Geografické objekty, pohoří, řeky, přírodní památky
+                   - GPE: Geopolitické entity (státy, města, kraje, obce)
+                   - DATE: Data, dny, časové údaje a období
+                   - FAC: Budovy, letiště, stavby, infrastruktura
+
+                 Pokud text obsahuje osoby, organizace, lokality nebo data, musí být uvedeny v odpovídajících seznamech.
+
+                 Nevracej prázdné seznamy, pokud jsou v textu zjevně přítomné relevantní entity..
+
+                2. Sentiment: Vyber právě jednu hodnotu: "pozitivní", "neutrální" nebo "negativní".
+                3. Dezinformace: Vyhodnoť pravdivost na základě znepokojivého tónu, konspirací či obecných faktů. Vyber "ano" nebo "ne".
+                4. Výstup: Vrať výhradně čistý JSON bez jakýchkoliv komentářů nebo omáčky kolem."
+                """
+            )
         },
+        {"role": "user", "content": odstřiženy_text}
     ]
 
     # URL podle OpenAI kompatibilního schématu: http://{host}:{port}/v1/chat/completions
     url = f"http://{cfg['host']}:{cfg['port']}/v1/chat/completions"
 
+    #print(messages[0]["content"]) # DEBUG smazat
     payload = {
         "model": cfg["model"],
-        "messages": [{"role": "user", "content": messages[0]["content"]}],
+        "messages": messages,
         "max_tokens": cfg["max_tokens"],
         "temperature": cfg["temperature"],
     }
@@ -558,6 +573,7 @@ def _analizovat_llm(text: str, zeme: str | None = "") -> dict:
         "text": odstřiženy_text,
         "ner": entities,
         "sentiment": post.get("sentiment", "").lower(),
+        "dezinformace": post.get("dezinformace", "").lower(),
     }
 
 
