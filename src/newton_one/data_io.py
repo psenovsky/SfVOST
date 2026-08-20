@@ -72,6 +72,9 @@ def pretvorit_radku(radka):
         if not hodnota:
             hodnota = ""
 
+        if nazev == "URL článku" and sloupec.get("strip_space"):
+            hodnota = strip_unicode_whitespace(hodnota)
+
         # Datum publikování formátujeme na YYYY-MM-DD
         if nazev == "Datum publikování":
             hodnota = parse_datum(hodnota) or hodnota

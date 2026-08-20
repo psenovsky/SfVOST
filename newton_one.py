@@ -20,7 +20,6 @@ Datum: 2026-08-14
 
 import argparse                                              # argumenty příkazového řádku
 import os                                                     # operace se systémem
-import urllib.request                                          # HTTP volání do lokálního LLM endpointu
 
 # Import analyzátorů malých modelů (Phase 3)
 from config_loader import ConfigLoader                        # čtení config.ini
@@ -106,66 +105,20 @@ else:
 
 
 # =============================================================================
-# Konstanty
+# Konstanty — import z src/newton_one/models.py (Phase 2 – reorganizace)
 # =============================================================================
 
-CSV_SEP = ";"                                                 # odliovník sloupců v NewtonOne CSV
-ENCODING = "utf-8"                                            # kódování vstupního souboru
-JSONL_ENCODING = "utf-8"                                      # kódování výstupního souboru
-OUTPUT_DELIMITER = "\t"                                       # oddělovač klíčů v JSON (pro determinismus)
+from src.newton_one.models import (
+    CSV_SEP,
+    ENCODING,
+    JSONL_ENCODING,
+    OUTPUT_DELIMITER,
+    SLoupce,
+    UNICODE_WHITESPACE,
+)
 
-# Sloupci, které budeme extrahovat z CSV
-SLoupce = [
-    {"nazev": "Kód článku",     "typ": str},
-    {"nazev": "Datum publikování", "typ": str},
-    {"nazev": "Název",          "typ": str},
-    {"nazev": "Zdroj",           "typ": str},
-    {"nazev": "Země",            "typ": str},
-    {"nazev": "Typ média",       "typ": str},
-    {"nazev": "Anotace",         "typ": str},
-    {"nazev": "Plné znění",      "typ": str},
-    {"nazev": "Typ zprávy",      "typ": str},
-    {"nazev": "Sentiment",       "typ": str},
-    {"nazev": "Dosah",           "typ": int, "strip_space": True},
-]
 
 # Unicode znaky, které by mohly být mezernatami v číslech (např. U+00A0 nbsp, U+2007 thin space)
-UNICODE_WHITESPACE = "\xa0\u2007\u2008\u2009\u200a\u205f\u3000"
-
-
-# =============================================================================
-# Funkce – data I/O (Phase 1-2)
-# =============================================================================
-
-def parse_datum(date_str):
-    """
-    Zkusí přeměnit řetězec na formát YYYY-MM-DD.
-
-    Parameters
-    ----------
-    date_str : str
-        Datum v libovolném formátu (např. '25.06.2021 00:00').
-
-    Vrací
-    -----
-    str nebo None
-        Formátované datum YYYY-MM-DD, pokud je parsovatelné; jinak původní řetězec.
-    """
-    from datetime import datetime
-
-    if not date_str or not isinstance(date_str, str):
-        return date_str
-
-    date_str = date_str.strip()
-    for formát in ("%Y-%m-%d", "%d.%m.%Y %H:%M"):
-        try:
-            datetime.strptime(date_str, formát)
-            return datetime.strptime(date_str, formát).strftime("%Y-%m-%d")
-        except ValueError:
-            continue
-
-    # Pokud žádný formát nevyfunčí, vrátíme původní hodnotu
-    return date_str
 
 
 # =============================================================================

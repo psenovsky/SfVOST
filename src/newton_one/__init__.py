@@ -11,7 +11,7 @@ from src.newton_one.models import (
     SLoupce,
     UNICODE_WHITESPACE,
 )
-from src.newton_one.utils import parse_datum, strip_unicode_whitespace, progress_bar
+from src.newton_one.utils import parse_datum, strip_unicode_whitespace, progress_bar, parse_url
 from src.newton_one.data_io import nacti_csv, pretvorit_radku, ulozit_jsonl
 
 __all__ = [
@@ -25,6 +25,7 @@ __all__ = [
     "parse_datum",
     "strip_unicode_whitespace",
     "progress_bar",
+    "parse_url",
     "nacti_csv",
     "pretvorit_radku",
     "ulozit_jsonl",

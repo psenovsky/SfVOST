@@ -44,6 +44,45 @@ def strip_unicode_whitespace(text):
     return "".join(ch for ch in text if ch not in UNICODE_WHITESPACE).strip()
 
 
+# =============================================================================
+# Scraper utility – URL parsing helpers (Phase 2)
+# =============================================================================
+
+import re
+
+
+def parse_url(url_string):
+    """
+    Vyruší platné URL. Zpětně vrátí False, pokud není platný.
+
+    Parameters
+    ----------
+    url_string : str nebo None
+        URL k ověření (např. 'https://example.com/article').
+
+    Vrací
+    -----
+    bool
+        True pokud je URL platná; jinak False.
+    """
+    if not isinstance(url_string, str) or not url_string.strip():
+        return False
+    pattern = re.compile(
+        r'^https?://'  # http:// nebo https://
+        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|)'  # doména
+        r'localhost|'
+        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # IP nebo localhost
+        r'(?::\d+)?'  # volitelný port
+        r'(?:/?|[/?]\S+)$', re.IGNORECASE
+    )
+    return bool(pattern.match(url_string.strip()))
+
+
+def is_valid_url(url):
+    """Zkrácená alias pro parse_url."""
+    return parse_url(url)
+
+
 def progress_bar(i, total):
     """Vytvoří progress bar s naplněnou šířkou 50 znaků."""
     percent = (i + 1) / total * 100

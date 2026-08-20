@@ -20,7 +20,8 @@ Pracujeme na části projektu, která se věnuje analýze příspěvků získan�
 
 Testovací data jsou dostupná v `data/Tornádo 2021_small.csv`. Při použití nástrojů přístupných si dej pozor na cestu - obsahuje mezeru, název je proto potřeba obalit do uvozovek tak, aby to v bash fungovalo. Dočasné a testovací soubory můžeš dát také do složky `tmp` ve složce projektu.
 
-- [ ] Fáze 1: Reorganizace `newton_one.py`
+- [x] Fáze 1: Reorganizace `newton_one.py`
+- [x] Fáze 2: Příprava pro webscrapper
 
 
 ### Fáze 1: Reorganizace `newton_one.py`
@@ -28,3 +29,9 @@ Testovací data jsou dostupná v `data/Tornádo 2021_small.csv`. Při použití
 Dosud jsme analýzu řešili jedním skriptem, ukážalo se ale, že celý proces bude složitější a nemá proto smysl abychom kód drželi v jednom souboru. Vytvoř proto složku `newton_one` v složce `src` a to ní budeme refaktorovat stávající kód z `newton_one.py`. V root projektu by měl zůstat runner skript. Parametry příkazové řádky tohoto skriptu by prozatím tůstaly stejné.
 
 Analyzuj obsah `newton_one.py`. Navrhni jak reorganizovat tento soubor a plán si nech schválit.
+
+### Fáze 2: Příprava pro webscrapper
+
+Naším celovým cílem, ke kterému dojdeme v dalších etapách vývoje, je návrh utility schopné načítání plných textů článků. CSV datový soubor sice disponuje sloupcem plný text, ale tento je prázdný a služba není schopna plný text vracet. V CSV souboru je ale sloupec `Detail zprávy v NewtonOne` obsahující odkaz na plný text článku. Ten ve finále využijeme pro načítání.
+
+V této fázi máme menší cíl - dokončení refaktorizace `newton_one.py`, které obsahuje datovou strukturu pro CSV, v promenné sloupce. Ty budeme potřebovat refaktorovat tak aby byly využitelné jednak v newton_one.py a jednak v nové utilitě. Možná by bylo dobré také podobným způsobem standardizovat výstupní formát?
