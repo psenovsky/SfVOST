@@ -16,4 +16,15 @@ Although this file is written in English, the project itself is Czech, so all la
 
 ## The plan
 
-TBD
+Pracujeme na části projektu, která se věnuje analýze příspěvků získaných pomocí služby monitoringu médií NewtonOne (stávající verze analýzy je v `newton_one.py`). Vždy se snažíme postupovat po relativně malých částech problémů (fázích), které řešíme postupně. Vždy vyřešíme jednu, tu pak odladíme a postupujeme dále.
+
+Testovací data jsou dostupná v `data/Tornádo 2021_small.csv`. Při použití nástrojů přístupných si dej pozor na cestu - obsahuje mezeru, název je proto potřeba obalit do uvozovek tak, aby to v bash fungovalo. Dočasné a testovací soubory můžeš dát také do složky `tmp` ve složce projektu.
+
+- [ ] Fáze 1: Reorganizace `newton_one.py`
+
+
+### Fáze 1: Reorganizace `newton_one.py`
+
+Dosud jsme analýzu řešili jedním skriptem, ukážalo se ale, že celý proces bude složitější a nemá proto smysl abychom kód drželi v jednom souboru. Vytvoř proto složku `newton_one` v složce `src` a to ní budeme refaktorovat stávající kód z `newton_one.py`. V root projektu by měl zůstat runner skript. Parametry příkazové řádky tohoto skriptu by prozatím tůstaly stejné.
+
+Analyzuj obsah `newton_one.py`. Navrhni jak reorganizovat tento soubor a plán si nech schválit.
