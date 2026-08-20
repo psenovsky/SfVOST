@@ -17,13 +17,10 @@ Parametry:
 Autor: Pavel Šenovský
 Datum: 2026-08-14
 """
+
 import argparse                                              # argumenty příkazového řádku
-import csv                                                    # čtení CSV souborů
-import configparser                                           # práce s config.ini
-import json                                                   # serializace JSON
 import os                                                     # operace se systémem
 import urllib.request                                          # HTTP volání do lokálního LLM endpointu
-from datetime import datetime                                 # práce s daty
 
 # Import analyzátorů malých modelů (Phase 3)
 from config_loader import ConfigLoader                        # čtení config.ini
@@ -41,22 +38,30 @@ except ImportError:
 
 from transformers.pipelines import pipeline as hf_pipeline     # Disinformation detection — OPTIMIZED in Phase 4
 
-# Singleton cache pro inicializaci modelů jednou (Phase 4 – optimalizace API volání)
-_MODEL_CACHE = {
-    "ner": None,                # spaCy NER instance
-    "sentiment": None,          # nlptown/bert-base-multilingual-uncased-sentiment text-classification
-    "dezinformace": None,       # bart-large-mnli zero-shot classifier (WORST OFFENDER - optimized here)
-}
+
+# =============================================================================
+# Model cache – singleton pattern (Phase 4)
+# =============================================================================
+
+try:
+    from src.newton_one.config_loader import _MODEL_CACHE, _get_model, _check_llm_config
+except ImportError as e:
+    print(f"❌ Chyba importu z config_loader: {e}")
+    raise
 
 
-def _get_model(model_key: str):
-    """Vrátí singleton instanci modelu — inicializuje se pouze jednou."""
-    if _MODEL_CACHE[model_key] is not None:
-        return _MODEL_CACHE[model_key]
+# =============================================================================
+# Funkce – data I/O (Phase 1-2)
+# =============================================================================
 
+from src.newton_one.data_io import nacti_csv, pretvorit_radku, ulozit_jsonl
+
+
+# =============================================================================
 # Konfigurace LLM endpointu (Phase 5 – analýza pomocí lokálního LLM)
-_llm_config = configparser.RawConfigParser()
-_llm_config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.ini")
+# =============================================================================
+
+_llm_config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.ini")
 
 
 def _check_llm_config():
@@ -85,15 +90,19 @@ def _check_llm_config():
 # Maximum retry count pro LLM API volání (Phase 5)
 MAX_LLM_RETRY = 3
 
-
 # Konfigurace Phase 4 – optimalizace API volání
-_cfg = ConfigLoader()
-_BATCH_SIZE = int(_cfg.get_int("newton_one", "batch_size", fallback=50))
+try:
+    _cfg = ConfigLoader()
+except ImportError:
+    _cfg = None
 
-
-
-# Unicode znaky, které by mohly být mezernatami v číslech (např. U+00A0 nbsp, U+2007 thin space)
-UNICODE_WHITESPACE = "\xa0\u2007\u2008\u2009\u200a\u205f\u3000"
+if _cfg is not None:
+    try:
+        _BATCH_SIZE = int(_cfg.get_int("newton_one", "batch_size", fallback=50))
+    except (ValueError, TypeError):
+        _BATCH_SIZE = 50
+else:
+    _BATCH_SIZE = 50
 
 
 # =============================================================================
@@ -104,7 +113,6 @@ CSV_SEP = ";"                                                 # odliovník sloup
 ENCODING = "utf-8"                                            # kódování vstupního souboru
 JSONL_ENCODING = "utf-8"                                      # kódování výstupního souboru
 OUTPUT_DELIMITER = "\t"                                       # oddělovač klíčů v JSON (pro determinismus)
-
 
 # Sloupci, které budeme extrahovat z CSV
 SLoupce = [
@@ -121,12 +129,15 @@ SLoupce = [
     {"nazev": "Dosah",           "typ": int, "strip_space": True},
 ]
 
+# Unicode znaky, které by mohly být mezernatami v číslech (např. U+00A0 nbsp, U+2007 thin space)
+UNICODE_WHITESPACE = "\xa0\u2007\u2008\u2009\u200a\u205f\u3000"
+
 
 # =============================================================================
-# Funkce
+# Funkce – data I/O (Phase 1-2)
 # =============================================================================
 
-def parse_datum(date_str: str) -> str | None:
+def parse_datum(date_str):
     """
     Zkusí přeměnit řetězec na formát YYYY-MM-DD.
 
@@ -140,6 +151,8 @@ def parse_datum(date_str: str) -> str | None:
     str nebo None
         Formátované datum YYYY-MM-DD, pokud je parsovatelné; jinak původní řetězec.
     """
+    from datetime import datetime
+
     if not date_str or not isinstance(date_str, str):
         return date_str
 
@@ -155,124 +168,15 @@ def parse_datum(date_str: str) -> str | None:
     return date_str
 
 
-def nacti_csv(cesta_csv: str) -> list[dict[str, str]]:
-    """
-    Načte semicolon-delimited CSV soubor a vrací seznam slovníků.
-
-    Parameters
-    ----------
-    cesta_csv : str
-        Cesta k vstupnímu CSV souboru.
-
-    Vrací
-    -----
-    list[dict[str, str]]
-        Seznam řádků jako slovníky s klíči odpovídajícími názvům sloupců v CSV.
-    """
-    if not os.path.exists(cesta_csv):
-        print(f"❌ Vstupní CSV soubor neexistuje: {cesta_csv}")
-        return []
-
-    radky = []
-    with open(cesta_csv, "r", encoding=ENCODING, newline="") as f:
-        reader = csv.DictReader(f, delimiter=CSV_SEP)
-        for jazyk in reader:
-            if not jazyk or all(not v.strip() for v in jazyk.values()):
-                continue
-            radky.append(jazyk)
-
-    print(f"✅ Načteno {len(radky)} řádků z souboru {cesta_csv}")
-    return radky
-
-
-def pretvorit_radku(radka: dict[str, str]) -> dict[str, str]:
-    """
-    Přetvoří jeden řádek CSV na JSON objekt podle definice SLoupce.
-
-    Parameters
-    ----------
-    radka : dict[str, str]
-        Jeden řádek z CSV (klíče jsou názvy sloupců).
-
-    Vrací
-    -----
-    dict[str, str]
-        Přetvořený řádek s vypsáním hodnot a formátováním dat.
-    """
-    vysledek = {}
-    for sloupec in SLoupce:
-        nazev = sloupec["nazev"]
-        hodnota = radka.get(nazev, "")
-
-        # Strhání mezernat ze všech hodnot (včetně Unicode whitespace)
-        if sloupec.get("strip_space"):
-            hodnota = "".join(ch for ch in hodnota if ch not in UNICODE_WHITESPACE).strip()
-
-        if not hodnota:
-            hodnota = ""
-
-        # Datum publikování formátujeme na YYYY-MM-DD
-        if nazev == "Datum publikování":
-            hodnota = parse_datum(hodnota) or hodnota
-
-        # Dosah → integer
-        if nazev == "Dosah" and sloupec.get("typ") == int:
-            try:
-                hodnota = int(float(hodnota))  # float→int pro případ desetinných čísel
-            except (ValueError, TypeError):
-                hodnota = ""
-
-        vysledek[nazev] = hodnota
-
-    return vysledek
-
-
-def ulozit_jsonl(radky: list[dict[str, str]], cesta_output: str) -> int:
-    """
-    Uloží řádky do JSONL souboru se sorted keys pro determinismus.
-
-    Parameters
-    ----------
-    radky : list[dict[str, str]]
-        Seznam přetvořených řádků.
-    cesta_output : str
-        Cesta k výstupnímu JSONL souboru.
-
-    Vrací
-    -----
-    int
-        Počet zapsaných řádků.
-    """
-    if not radky:
-        print("⚠️ Žádné data pro zápis.")
-        return 0
-
-    # Zkontrolovat, zda soubor již existuje
-    if os.path.exists(cesta_output):
-        velkost_input = os.path.getsize(cesta_output)
-        if velkost_input != 0:
-            print(f"⚠️ Výstupní soubor {cesta_output} již existuje ({velkost_input} B). Přepisuji ho.")
-
-    # Uložit
-    count = 0
-    with open(cesta_output, "w", encoding=JSONL_ENCODING) as f:
-        for radka in radky:
-            json_str = json.dumps(radka, ensure_ascii=False, sort_keys=True)
-            f.write(json_str + "\n")
-            count += 1
-
-    return count
-
-
 # =============================================================================
 # Funkce pro analýzu malými modely (Phase 3 – NER_SM, Sentiment_SM, Dezinformace)
 # =============================================================================
 
-def _detect_jazyk_zeme(zeme: str | None) -> str:
+def _detect_jazyk_zeme(zeme):
     """
     Určí jazyk na základě sloupce Země.
 
-    Parametry
+    Parameters
     ----------
     zeme : str nebo None
         Hodnota ze sloupce Země (např. 'CZ', 'US', 'SK').
@@ -293,11 +197,11 @@ def _detect_jazyk_zeme(zeme: str | None) -> str:
 # --- Phase 4 OPTIMIZACE ---
 # NER a Sentiment_SM jsou vymezena jako commented out – focus na dezinformace
 
-def _analizovat_ner_sm(text: str, zeme: str | None = "") -> list[dict]:
+def _analizovat_ner_sm(text, zeme=""):
     """
     Provede NER pomocí spaCy pro daný text. (Phase 4: commentováno pro optimalizaci API)
 
-    Parametry
+    Parameters
     ----------
     text : str
         Text k analýze (sloupec Plné znění).
@@ -325,11 +229,11 @@ def _analizovat_ner_sm(text: str, zeme: str | None = "") -> list[dict]:
         return []
 
 
-def _analizovat_sentiment_sm(text: str) -> dict:
+def _analizovat_sentiment_sm(text):
     """
     Provede sentiment analýzu pomocí BERT multi-lang (nlptown/bert-base-multilingual-uncased-sentiment).
 
-    Parametry
+    Parameters
     ----------
     text : str
         Text k analýze (sloupec Plné znění).
@@ -364,11 +268,11 @@ def _analizovat_sentiment_sm(text: str) -> dict:
         return {}
 
 
-def _analizovat_dezinformace_batch(radky: list[dict[str, str]]) -> list[dict]:
+def _analizovat_dezinformace_batch(radky):
     """
     Provede batch detekci dezinformací pro VŠECH řádků najednou.
 
-    Parametry
+    Parameters
     ----------
     radky : list[dict[str, str]]
         Seznam přetvořených řádků CSV (musí mít stejný počet jako původní řádky).
@@ -428,6 +332,7 @@ def _init_sentiment_analyzer():
         print("⚙️ Inicializuji BERT multi-lang sentiment model...")
         _MODEL_CACHE["sentiment"] = sentiment_BERT_multi()
 
+
 def _init_dezinformace_analyzer():
     """Inicializace dezinformačního detektoru (bart-large-mnli) — volat pouze jednou."""
     if _MODEL_CACHE["dezinformace"] is None:
@@ -437,19 +342,18 @@ def _init_dezinformace_analyzer():
         )
 
 
-
 # =============================================================================
 # Phase 5 – LLM analýza (sentiment_LLM, NER_LLM)
 # =============================================================================
 
-def _analizovat_llm(text: str, zeme: str | None = "") -> dict:
+def _analizovat_llm(text, zeme=""):
     """
     Provede NER a sentiment analýzu pomocí lokálního LLM v jednom HTTP volání.
 
     Prompt je odvozen od src/llm.py (stejné system message, stejná struktura JSON odpovědi).
     URL endpoint: http://{host}:{port}/v1/chat/completions  — OpenAI kompatibilní přístupový bod
 
-    Parametry
+    Parameters
     ----------
     text : str
         Text k analýze (sloupec Plné znění).
@@ -463,129 +367,17 @@ def _analizovat_llm(text: str, zeme: str | None = "") -> dict:
         Pokud je text prázdný, vrátí prázdný dict. Pokud endpoint není dostupný,
         vrátí chybovou zprávu s hodnotami na null/empty.
     """
-    if not text:
-        return {"ner": {}, "sentiment": "", "text": ""}
+    from src.newton_one.llm_analyzer import _analizovat_llm as _llm
 
-    cfg = _check_llm_config()
-    if not cfg["valid"]:
-        print(f"⚠️ NER_LLM/Sentiment_LLM: {cfg['message']}")
-        return {"ner": {}, "sentiment": "", "text": text[:2000]}
-
-    # Odstranit text nad maximální délku (LLM má limit)
-    trunc_limit = 20000
-    odstřiženy_text = text[:trunc_limit]
-
-    messages = [
-        {
-            "role": "system",
-            "content": ("""
-                Jsi expert na analýzu textu a lingvistiku. Tvým úkolem je provést detailní analýzu
-                příspěvků ze sociálních sítí a zpravodajství.
-
-                Pro každý příspěvek aktivně vyhledej a extrahuj všechny pojmenované entity (NER),
-                urči sentiment a vyhodnoť přítomnost dezinformací.
-
-                Vrať výsledek VŽDY jako validní JSON pole (array), kde každý prvek odpovídá jednomu příspěvku v pořadí zadaném na vstupu.
-
-                Struktura každého prvku v poli:
-                {{
-                  "ner": {{
-                    "PER": ["Petr Pavel"],"
-                    "ORG": ["Škoda Auto", "PČR"],"
-                    "LOC": ["Vysoké Tatry"],"
-                    "GPE": ["Česká republika", "Praha"],"
-                    "DATE": ["včera", "17. srpna"],"
-                    "FAC": ["Letiště Václava Havla"]
-                  }},
-                  "sentiment": "pozitivní | neutrální | negativní",
-                  "dezinformace": "ano | ne",
-                  "klíčová slova": ["tornádo", "riziko"]
-                }}
-
-                Pravidla pro zpracování:
-
-                1. NER: Prohledej text a extrahuj všechna vlastní jména a specifické údaje do odpovídajících kategorií:
-                  - Nejprve identifikuj všechny pojmenované entity v textu.
-                  - Každou nalezenou entitu zařaď do odpovídající kategorie.
-                  - Entity uváděj přesně tak, jak se vyskytují v textu.
-                  - Duplicitní výskyty odstraň.
-                  - Pokud pro danou kategorii žádná entita neexistuje, vrať [].
-
-                 Kategorie NER:
-                   - PER: Jména lidí a osobností
-                   - ORG: Společnosti, firmy, instituce, úřady, spolky
-                   - LOC: Geografické objekty, pohoří, řeky, přírodní památky
-                   - GPE: Geopolitické entity (státy, města, kraje, obce)
-                   - DATE: Data, dny, časové údaje a období
-                   - FAC: Budovy, letiště, stavby, infrastruktura
-
-                 Pokud text obsahuje osoby, organizace, lokality nebo data, musí být uvedeny v odpovídajících seznamech.
-
-                 Nevracej prázdné seznamy, pokud jsou v textu zjevně přítomné relevantní entity..
-
-                2. Sentiment: Vyber právě jednu hodnotu: "pozitivní", "neutrální" nebo "negativní".
-                3. Dezinformace: Vyhodnoť pravdivost na základě znepokojivého tónu, konspirací či obecných faktů. Vyber "ano" nebo "ne".
-                4. Klíčová slova: Identifikuj všechna klíčová slova charakterizující hodnocený příspěvek. Klíčových slov by nemělo být více než 10.
-                5. Výstup: Vrať výhradně čistý JSON bez jakýchkoliv komentářů nebo omáčky kolem."
-                """
-            )
-        },
-        {"role": "user", "content": odstřiženy_text}
-    ]
-
-    # URL podle OpenAI kompatibilního schématu: http://{host}:{port}/v1/chat/completions
-    url = f"http://{cfg['host']}:{cfg['port']}/v1/chat/completions"
-
-    #print(messages[0]["content"]) # DEBUG smazat
-    payload = {
-        "model": cfg["model"],
-        "messages": messages,
-        "max_tokens": cfg["max_tokens"],
-        "temperature": cfg["temperature"],
-    }
-
-    try:
-        req = urllib.request.Request(
-            url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"}
-        )
-        with urllib.request.urlopen(req, timeout=300) as response:
-            result = json.loads(response.read().decode())
-            obsah = result["choices"][0]["message"]["content"].strip()
-
-            if obsah.startswith("```"):
-                řádky = obsah.split("\n")
-                obsah = "\n".join(řádky[1:-1])
-
-            výsledek = json.loads(obsah)
-        post = výsledek[0] if isinstance(výsledek, list) and len(výsledek) > 0 else {}
-    except Exception as exc:
-        print(f"⚠️ Chyba NER_LLM/Sentiment_LLM pro text: endpoint neodpověděl nebo selhal ({exc})")
-        return {"ner": {}, "sentiment": "", "text": odstřiženy_text}
-
-    entities = {
-        "PER": post.get("ner", {}).get("PER", []),
-        "ORG": post.get("ner", {}).get("ORG", []),
-        "LOC": post.get("ner", {}).get("LOC", []),
-        "GPE": post.get("ner", {}).get("GPE", []),
-        "DATE": post.get("ner", {}).get("DATE", []),
-        "FAC": post.get("ner", {}).get("FAC", []),
-    }
-
-    return {
-        "text": odstřiženy_text,
-        "ner": entities,
-        "sentiment": post.get("sentiment", "").lower(),
-        "dezinformace": post.get("dezinformace", "").lower(),
-        "klíčová slova": post.get("klíčová slova", []),
-    }
+    return _llm(text, zeme)
 
 
-def _analizovat_ner_llm(text: str, zeme: str | None = "") -> dict:
+def _analizovat_ner_llm(text, zeme=""):
     """Provede NER pomocí lokálního LLM. (Phase 5 – nyní volá společnou funkci _analizovat_llm)"""
     return _analizovat_llm(text, zeme)
 
 
-def _analizovat_sentiment_llm(text: str, zeme: str | None = "") -> dict:
+def _analizovat_sentiment_llm(text, zeme=""):
     """Provede sentiment analýzu pomocí lokálního LLM. (Phase 5 – nyní volá společnou funkci _analizovat_llm)"""
     return _analizovat_llm(text, zeme)
 
