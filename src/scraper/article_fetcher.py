@@ -1,15 +1,37 @@
 # -*- coding: utf-8 -*-
 
-"""Načítání plných textů článků z URL (Phase 2)."""
+"""Načítání plných textů článků z URL (Phase 3 – rate limiting)."""
 
+import configparser as _configparser
 import json as _json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 
 
 from src.newton_one.data_io import nacti_csv, ulozit_jsonl
+
+
+# Načtení konfigurace scraperu z config.ini (Phase 3 – rate limiting)
+_scraper_config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "config.ini")
+_cfg = _configparser.ConfigParser()
+_cfg.read(_scraper_config_path)
+
+
+
+def get_scraper_delay():
+    """Vrátí prodlevu mezi pokusy o načtení článku (v sekundách)."""
+
+    try:
+        delay_str = _cfg.get("scraper", "delay")
+        return int(delay_str)
+    except (_configparser.NoSectionError, _configparser.NoOptionError):
+        return 5
+
+
+# Singleton cache pro inicializaci modelů jednou (Phase 4 – optimalizace API volání)
 from src.newton_one.models import ENCODING, JSONL_ENCODING, SLoupce, UNICODE_WHITESPACE
 from src.newton_one.utils import parse_url, is_valid_url
 
@@ -126,11 +148,16 @@ def nacit_batch_artikul(urls, timeout=30):
         Výsledky odpovídající pořadí vstupních URL. Prázdný dict pro chybné URL.
     """
     results = []
+    delay = get_scraper_delay()
     for i, url in enumerate(urls):
         vysledek = nacit_artikl(url, timeout=timeout)
         if vysledek:
             vysledek["index"] = i + 1  # 1-based index pro přiřazení zpět do CSV řádku
         results.append(vysledek)
+
+        # Rate limiting – krátká prodleva mezi pokusy o načtení článku
+        if delay > 0 and i < len(urls) - 1:
+            time.sleep(delay)
 
     print(f"\n✅ Batch načteno {len(results)} URL, úspěšně: {sum(1 for r in results if r.get('text'))}")
     return results
