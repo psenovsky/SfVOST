@@ -69,9 +69,7 @@ def parse_url(url_string):
         return False
     pattern = re.compile(
         r'^https?://'  # http:// nebo https://
-        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|)'  # doména
-        r'localhost|'
-        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # IP nebo localhost
+        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|localhost|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # IP nebo localhost
         r'(?::\d+)?'  # volitelný port
         r'(?:/?|[/?]\S+)$', re.IGNORECASE
     )

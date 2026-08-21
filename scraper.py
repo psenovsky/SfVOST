@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-"""Runner skript pro scraper utility (Phase 2)."""
+"""Runner skript pro scraper utility (Phase 3)."""
 
 import argparse
 import os
