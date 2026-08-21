@@ -18,18 +18,19 @@ OUTPUT_DELIMITER = "\t"                                        # oddělovač kl�
 
 # Sloupci, které budeme extrahovat z CSV
 SLoupce = [
-    {"nazev": "Kód článku",          "typ": str},
-    {"nazev": "Datum publikování",   "typ": str},
-    {"nazev": "Název",              "typ": str},
-    {"nazev": "Zdroj",               "typ": str},
-    {"nazev": "Země",                "typ": str},
-    {"nazev": "Typ média",           "typ": str},
-    {"nazev": "Anotace",             "typ": str},
-    {"nazev": "Plné znění",          "typ": str},
-    {"nazev": "URL článku",          "typ": str, "strip_space": True},
-    {"nazev": "Typ zprávy",          "typ": str},
-    {"nazev": "Sentiment",           "typ": str},
-    {"nazev": "Dosah",               "typ": int, "strip_space": True},
+    {"nazev": "Kód článku",            "typ": str},
+    {"nazev": "Datum publikování",     "typ": str},
+    {"nazev": "Název",                "typ": str},
+    {"nazev": "Zdroj",                 "typ": str},
+    {"nazev": "Země",                  "typ": str},
+    {"nazev": "Typ média",             "typ": str},
+    {"nazev": "Anotace",               "typ": str},
+    {"nazev": "Plné znění",            "typ": str},
+    {"nazev": "Originální internetový zdroj", "typ": str, "strip_space": True},
+    {"nazev": "URL článku",            "typ": str, "strip_space": True},
+    {"nazev": "Typ zprávy",            "typ": str},
+    {"nazev": "Sentiment",             "typ": str},
+    {"nazev": "Dosah",                 "typ": int, "strip_space": True},
 ]
 
 # Maximum retry count pro LLM API volání (Phase 5)
