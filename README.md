@@ -31,9 +31,9 @@ Nový prototyp je založen na následujících modulech:
 6. **(plán) import dat do DB (DBPush.py)** - importuje data z sociálních sítí do databáze
 7. **analýza NER, sentiment a dezinformace pomocí LLM (SfVOST_LLM.py)**
 8. **GUI (run_gui.py)** - základní rozhraní pro konfiguraci a ovládání jednotlivých modulů projektu
-7. **dashboard** - v současnosti realizováno pomocí RMarkdown (předtím, než se ustálí funkcionalita, která by měla být obsažena v této části)
+9. **[newton_one.py](./newton_one.py)** - konverze NewtonOne CSV souboru do JSONL formátu pro analýzu
+10. **webscrapper (scraper.py / src/scraper/)** - načítání plných textů článků z URL odkazů v NewtonOne CSV
 
-V budoucnu je pak plánováno přidání další vrstvy aplikace, která by měla umožnit jednodušší orchestraci ovládání jednotlivých modulů pomocí uživatelsky přívětivého rozhraní.
 
 Základní představu o architektuře je možno si udělat z obr. níže.
 
@@ -512,6 +512,93 @@ Možná Vás napadne otázka, proč nezrealizovat tyto analýzy v jednom kroku (
 Nejmenší model použitý v rámci toto balíku má 426 MB, největší pak 2,15 GB, pokud bychom všechny modely, které za jistých okolností balík používá iniciovaly najednou zabraly by v paměti necelých 7 GB. K této potřebě paměti je potřeba připočítat běžnou spotřebu paměti skripty samotnými.
 
 Toto architektonické řešení je pro současnou fázi vývoje systému dostatečné. Pokud by se ale měla přidat podpora většího množství modelů, např. pro účely srovnání výkonnosti pro různé úlohy v různých jazycích není použitý způsob práce s modely úplně efektivní a musel by se změnit. Předělat by bylo nutné především oblast jazyků a modelů, které jsou na ně mapovány.
+
+## newton_one.py — Konverze NewtonOne CSV do JSONL
+
+Tento skript převede semicolon-delimited CSV soubor z NewtonOne (služba monitoringu médií) do JSONL formátu pro následnou analýzu. Vstupní CSV obsahuje metainformace o článku (zdroj, země, typ média atd.) a odkaz na plný text článku.
+
+```bash
+uv run newton_one.py -c <cesta_k_CSV> -o <cesta_k_JSONL>
+```
+
+Parametry:
+
+- `-h`, `--help`  - zobrazí nápovědu a skončí
+- `-c`, `--csv`   - cesta k semicolon-delimited CSV souboru (povinné)
+- `-o`, `--output` - výstupní JSONL soubor (povinný)
+
+Výstupní formát: každý řádek JSONL je jeden přetvořený příspěvek se sloupci: Kód článku, Datum publikování, Název, Zdroj, Země, Typ média, Anotace, Plné znění, URL článku, Typ zprávy, Sentiment, Dosah. Sloupce jsou v JSON uložené jako tab-delimited keys pro determinismus.
+
+### Data struktura (SLoupce)
+
+Všechny konstanty (sloupec definice `SLoupce`, kódování CSV/JSONL, atd.) jsou centralizovány v modulu `src/newton_one/models.py` a jsou sdílené s scraperem pro konzistenci.
+
+```python
+SLoupce = [
+    {"nazev": "Kód článku",          "typ": str},
+    {"nazev": "Datum publikování",   "typ": str},
+    {"nazev": "Název",              "typ": str},
+    {"nazev": "Zdroj",               "typ": str},
+    {"nazev": "Země",                "typ": str},
+    {"nazev": "Typ média",           "typ": str},
+    {"nazev": "Anotace",             "typ": str},
+    {"nazev": "Plné znění",          "typ": str},
+    {"nazev": "URL článku",          "typ": str, "strip_space": True},
+    {"nazev": "Typ zprávy",          "typ": str},
+    {"nazev": "Sentiment",           "typ": str},
+    {"nazev": "Dosah",               "typ": int, "strip_space": True},
+]
+```
+
+### Připraveno pro webscrapper (Phase 2)
+
+JSONL výstup z `newton_one.py` je navrženo tak, aby bylo použito i scraperem. Každý řádek JSONL obsahuje sloupec `URL článku`, na který může scraper odkazovat pro načtení plného textu článku. Výstupní formát (tab-delimited keys) a struktura dat jsou sdílené mezi oběma utilitymi.
+
+### Struktura projektu (newton_one)
+
+```
+src/newton_one/
+├── __init__.py         # export veřejného API
+├── models.py           # konstanty (SLoupce, CSV_SEP, ENCODING... — zdroj pravdy)
+├── utils.py            # helper funkce (parse_datum, strip_unicode_whitespace...)
+├── data_io.py          # nacti_csv(), pretvorit_radku(), ulozit_jsonl()
+└── config_loader.py    # _MODEL_CACHE, _get_model, _check_llm_config
+```
+
+## scraper.py — Načítání plných textů článků z URL
+
+Tento skript načte CSV soubor obsahující sloupec `URL článku` a pro každé platné URL načte plný text článku. Výsledek se uloží do JSONL formátu v souladu s výstupem `newton_one.py`.
+
+```bash
+uv run scraper.py -c <cesta_k_CSV> -o <cesta_k_JSONL>
+```
+
+Parametry:
+
+- `-h`, `--help`  - zobrazí nápovědu a skončí
+- `-c`, `--csv`   - cesta k CSV souboru se sloupcem 'URL článku' (povinné)
+- `-o`, `--output` - výstupní JSONL soubor (povinný)
+
+### Funkce
+
+- **Načtení z URL** — pomocí standardního HTTP clienta (`urllib.request`) s automatickým zachycením chyb (404, timeout atd.)
+- **HTML parsing** — extrakce hlavního textu z HTML (odstranění `<script>`, `<style>`, priority na `<main>` → `<article>` → `<body>` → celkový text)
+- **Batch processing** — podpora načítání více URL najednou
+- **Graceful degradation** — řádky bez platného URL se vrátí s prázdným `Plné znění`
+
+### Struktura projektu (scraper)
+
+```
+src/scraper/
+├── __init__.py              # export veřejného API
+└── article_fetcher.py       # nacit_artikl(), nacit_batch_artikul(), nacti_z_ukazku_csv()
+```
+
+### Omezení
+
+- Základní HTML parsing bez JavaScript renderingu (server-side rendering pouze)
+- Žádný rate limiting mezi jednotlivými požadavky — pro velké soubory je třeba dodatečné ošetření
+- Podporovány pouze HTTP/HTTPS URL
 
 ## Analýza výsledků
 
