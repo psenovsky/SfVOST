@@ -106,6 +106,9 @@ dbname = vost_data
 historie_dni = 1
 zpozdeni_mezi_dotazy = 1
 
+[scraper]
+delay = 5
+
 [BlueSky]
 prah_jistoty = 0.75
 user = ***
@@ -115,6 +118,8 @@ password = ***
 Sekce database nastavuje konektivitu k databázovému backendu. V současnosti je podporovaná databáze MySQL nebo MariaDB jako altorenativní databáze.
 
 Sekce casove_limity pak specifikuje intenzitu dotazování programu vůči sociální síti. Nastavení historie_dni ovlivňuje kolik dní zpět se bude program dívat. Hodnota 1 je vhodná pro pouze testování, aby se omezil síťový mezi klientem a sociální sítí. Nastavení zpozdeni_mezi_dotazy pak nastavuje kolik sekund má klient počkat, než se znovu dotáže sociální sítě.
+
+Sekce scraper nastavuje prodlevu v sekundách mezi pokusy o načtení článku. Je určena pro rate limiting při práci s webovými servery — zamezuje přetížení cílových zdrojů. Výchozí hodnota je 5 sekund.
 
 Tato nastavení jsou důležitá pro praktické vytěžování sociální sítě, kdy lze očekávat, že sociální sít nebude možné vytěžit v jednom kroku.Klient bude tedy opakovaně oslovovat sociální síť a potřebné informace stáhne postupně. Prodloužení intervalu mezi dotazy by mělo zajistit, že sociální síť nebude přetěžovaná (což by mohlo vést k tomu, že práce klienta bude vyhodnocena např. jako útok.).
 
@@ -565,9 +570,9 @@ src/newton_one/
 └── config_loader.py    # _MODEL_CACHE, _get_model, _check_llm_config
 ```
 
-## scraper.py — Načítání plných textů článků z URL
+## scraper.py — Načítání plných textů článků z URL (Phase 3)
 
-Tento skript načte CSV soubor obsahující sloupec `URL článku` a pro každé platné URL načte plný text článku. Výsledek se uloží do JSONL formátu v souladu s výstupem `newton_one.py`.
+Tento skript načte CSV soubor obsahující sloupec `URL článku` a pro každé platné URL načte plný text článku. Výsledek se uloží do JSONL formátu v souladu s výstupem `newton_one.py`. Plné znění je naplněno ze sloupce `Originální internetový zdroj`.
 
 ```bash
 uv run scraper.py -c <cesta_k_CSV> -o <cesta_k_JSONL>
@@ -584,7 +589,19 @@ Parametry:
 - **Načtení z URL** — pomocí standardního HTTP clienta (`urllib.request`) s automatickým zachycením chyb (404, timeout atd.)
 - **HTML parsing** — extrakce hlavního textu z HTML (odstranění `<script>`, `<style>`, priority na `<main>` → `<article>` → `<body>` → celkový text)
 - **Batch processing** — podpora načítání více URL najednou
+- **Rate limiting** — mezi jednotlivými HTTP požadavky je vkládána konfigurovatelná prodleva (viz sekce `[scraper]` v config.ini). Výchozí hodnota 5 sekund zabraňuje přetížení cílových serverů.
 - **Graceful degradation** — řádky bez platného URL se vrátí s prázdným `Plné znění`
+
+### Konfigurace (rate limiting)
+
+Prodleva mezi pokusy o načtení článku je definována v sekci `[scraper]` souboru config.ini:
+
+```ini
+[scraper]
+delay = 5
+```
+
+Hodnota `delay` udává počet sekund prodlevy mezi jednotlivými HTTP požadavky. Pokud sekce nebo parametr chybí, použije se výchozí hodnota 5 sekund. Hodnotu je možné libovolně upravit podle potřeby.
 
 ### Struktura projektu (scraper)
 
@@ -597,7 +614,6 @@ src/scraper/
 ### Omezení
 
 - Základní HTML parsing bez JavaScript renderingu (server-side rendering pouze)
-- Žádný rate limiting mezi jednotlivými požadavky — pro velké soubory je třeba dodatečné ošetření
 - Podporovány pouze HTTP/HTTPS URL
 
 ## Analýza výsledků
