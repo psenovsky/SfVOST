@@ -27,7 +27,6 @@ SLoupce = [
     {"nazev": "Anotace",               "typ": str},
     {"nazev": "Plné znění",            "typ": str},
     {"nazev": "Originální internetový zdroj", "typ": str, "strip_space": True},
-    {"nazev": "URL článku",            "typ": str, "strip_space": True},
     {"nazev": "Typ zprávy",            "typ": str},
     {"nazev": "Sentiment",             "typ": str},
     {"nazev": "Dosah",                 "typ": int, "strip_space": True},
