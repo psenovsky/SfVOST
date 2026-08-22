@@ -137,14 +137,14 @@ def _remove_binary_garble(html):
     return re.sub(r'[^\x20-\xff]', '', html)
 
 
-def nacit_batch_artikul(urls, timeout=30):
+def nacit_batch_artikul(items, timeout=30):
     """
     Načte plné texty článků z daného seznamu URL.
 
     Parameters
     ----------
-    urls : list[str]
-        Seznam URL k článkům.
+    items : list[tuple[int, dict[str, str], str]]
+        Seznam (index_1based, raw_radek, url) k článkům.
     timeout : int
         Časový limit v sekundách pro HTTP požadavek (výchozí 30s).
 
@@ -155,14 +155,14 @@ def nacit_batch_artikul(urls, timeout=30):
     """
     results = []
     delay = get_scraper_delay()
-    for i, url in enumerate(urls):
+    for i, (index_1based, raw_radek, url) in enumerate(items):
         vysledek = nacit_artikl(url, timeout=timeout)
         if vysledek:
-            vysledek["index"] = i + 1  # 1-based index pro přiřazení zpět do CSV řádku
+            vysledek["index"] = index_1based  # 1-based index pro přiřazení zpět do CSV řádku
         results.append(vysledek)
 
         # Rate limiting – krátká prodleva mezi pokusy o načtení článku
-        if delay > 0 and i < len(urls) - 1:
+        if delay > 0 and i < len(items) - 1:
             time.sleep(delay)
 
     print(f"\n✅ Batch načteno {len(results)} URL, úspěšně: {sum(1 for r in results if r.get('text'))}")
@@ -416,8 +416,22 @@ def nacti_z_ukazku_csv(cesta_csv):
         print("⚠️ Žádné řádky k zpracování.")
         return []
 
-    urls = [_extrahovat_url_pro_naceni(r) for r in raw_radky]
+    # Filtrovat: pouze řádky, které ještě nemají vyplněné "Plné znění"
+    urls = []
+    for i, r in enumerate(raw_radky):
+        plne_zneni = (r.get("Plné znění", "") or "").strip()
+        if not plne_zneni:
+            url = _extrahovat_url_pro_naceni(r)
+            if url:
+                urls.append((i + 1, r, url))
     batch_results = nacit_batch_artikul(urls)
+
+    # Build lookup by index (1-based)
+    text_lookup = {}  # {index: result_dict}
+    for result in batch_results:
+        idx = result.get("index")
+        if idx is not None and result.get("text"):
+            text_lookup[idx] = result
 
     # Připojit výsledky zpět do CSV dat
     vysledky = []
@@ -451,15 +465,15 @@ def nacti_z_ukazku_csv(cesta_csv):
 
             vysledek[nazev] = hodnota
 
-        # Přidat načtený text článku
-        if i < len(batch_results) and batch_results[i].get("text"):
-            vysledek["Plné znění"] = batch_results[i]["text"]
-        else:
-            vysledek["Plné znění"] = ""
+        # Přidat načtený text článku – pouze pokud byl řádek vyfiltrován k scrapování
+        index_1based = i + 1
+        if index_1based in text_lookup:
+            vysledek["Plné znění"] = text_lookup[index_1based]
+        # Pokud již existuje hodnota z CSV, neměníme ji (je už vyplněno)
 
-        # Přidat detekci paywallu (True → "ano", False → "ne")
-        if i < len(batch_results):
-            vysledek["Paywall"] = "ano" if batch_results[i].get("paywall") else "ne"
+        # Přidat detekci paywallu – pouze pokud byl řádek vyfiltrován k scrapování
+        if index_1based in text_lookup:
+            vysledek["Paywall"] = "ano" if text_lookup[index_1based].get("paywall") else "ne"
 
         vysledky.append(vysledek)
 
