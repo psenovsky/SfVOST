@@ -33,17 +33,19 @@ def get_scraper_delay():
 
 
 # Singleton cache pro inicializaci modelů jednou (Phase 4 – optimalizace API volání)
-from src.newton_one.models import ENCODING, JSONL_ENCODING, SLoupce, UNICODE_WHITESPACE
-from src.newton_one.utils import parse_url, is_valid_url
+from src.newton_one.models import ENCODING, JSONL_ENCODING, SLoupce
+from src.newton_one.utils import is_valid_url
+
+
+# HTML parsing (extract_title, extract_body_text) a _clean_text přes modulem
+from src.scraper.html_parser import (_clean_text as html_clean_text,
+                                     extract_body_text as _extract_body_text,
+                                     extract_title as _extract_title)
 
 
 # =============================================================================
 # Funkce – načítání článku z URL
 # =============================================================================
-
-def _clean_text(text):
-    """Odstraní Unicode whitespace z textu."""
-    return "".join(ch for ch in text if ch not in UNICODE_WHITESPACE).strip()
 
 
 def nacit_artikl(url, timeout=30):
@@ -63,7 +65,7 @@ def nacit_artikl(url, timeout=30):
         {'text': '<vyčistěný text článku>', 'title': '<název článku>'}
         Pokud je URL neplatná nebo se načtení nepodaří, vrátí prázdný dict.
     """
-    if not url or not _clean_text(url):
+    if not url or not html_clean_text(url):
         return {}
 
     try:
@@ -94,7 +96,7 @@ def nacit_artikl(url, timeout=30):
     parsed = _parse_url(url)
     domain = parsed.netloc.lower().split(":")[0] if parsed.netloc else ""
     
-    result = {"text": _clean_text(text), "title": _clean_text(title), "paywall": check_paywall(html_content, url)}
+    result = {"text": html_clean_text(text), "title": html_clean_text(title), "paywall": check_paywall(html_content, url)}
     
     # Fallback: pokud se text nepodařilo extrahovat, použijeme og:description
     if not text.strip() and title:
@@ -103,7 +105,7 @@ def nacit_artikl(url, timeout=30):
             html_content, re.IGNORECASE
         )
         if desc_match:
-            result["text"] = _clean_text(desc_match.group(1))
+            result["text"] = html_clean_text(desc_match.group(1))
 
     # Validace: pokud je text krátký a vypadá jako binární data, vyhodíme ho
     if not text.strip() and title:
@@ -170,200 +172,20 @@ def nacit_batch_artikul(items, timeout=30):
 
 
 # =============================================================================
-# Funkce – parsing HTML (základní extrakce textu)
-# =============================================================================
-
-def _extract_title(html_content):
-    """Extrahuje title z HTML obsahu."""
-    # Zkusit <title> tag
-    match = re.search(r'<title[^>]*>(.*?)</title>', html_content, re.IGNORECASE | re.DOTALL)
-    if match:
-        return _clean_text(match.group(1))
-
-    # Fallback: meta description / og:title
-    match = re.search(r'<meta[^>]+property=["\']og:title["\'][^>]*content=["\']([^"\']+)["\']', html_content, re.IGNORECASE)
-    if match:
-        return _clean_text(match.group(1))
-
-    # Fallback: <h1> jako fallback
-    match = re.search(r'<h1[^>]*>(.*?)</h1>', html_content, re.IGNORECASE | re.DOTALL)
-    if match:
-        return _clean_text(match.group(1))
-
-    return ""
-
-
-def _extract_body_text(html_content):
-    """
-    Extrahuje hlavní textový obsah z HTML.
-
-    Postup (v pořadí pokusů – fallback chain):
-      1. Odstranit <script> a <style> tagy
-      2. Zkusit novinky-style: extrahovat z divu s class 'g_fp g_bG ogm-content__richContent'
-         (deeply nested article content section)
-      3. Zkusit <article> tag
-      4. Zkusit <main> tag
-      5. Filtr paragraphů – pro stránky, kde je text v <p> tagách (rozhlas-style)
-      6. Fallback: strhnout HTML tags a vrátit čistý text
-
-    Vrací
-    -----
-    str
-        Čistý text článku, nebo prázdný string pokud nelze extrahovat.
-    """
-    # Odstranit scripty a style tagy
-    html_content = re.sub(r'<script[^>]*>.*?</script>', '', html_content, flags=re.IGNORECASE | re.DOTALL)
-    html_content = re.sub(r'<style[^>]*>.*?</style>', '', html_content, flags=re.IGNORECASE | re.DOTALL)
-
-    # --- Strategie 1: novinky-style – ogm-content__richContent div (speakable paragraphs) ---
-    idx = html_content.find('class="g_fp g_bG')
-    if idx > 0 and (idx + 6) < len(html_content):
-        depth, end_pos = 0, -1
-        for i in range(idx, len(html_content)):
-            if html_content[i:i+4] == '</div>':
-                depth -= 1
-                if depth < 0:
-                    end_pos = i + 6; break
-        
-        # Fallback: pokud hloubkové vyhledání selže (novinky-style s nested divy), zkusit regex
-        section_extracted = None
-        if end_pos > 0 and (end_pos - idx) > 500:
-            section_extracted = html_content[idx:end_pos]
-        
-        # Fallback regex pro extrakci speakable paragraphů (jednoduchší pattern bez nested quotes)  
-        if not section_extracted:
-            match = re.search(
-                r'ogm-content__richContent[^"]*"[^>]*>(.*?)</div>',
-                html_content[idx:], re.IGNORECASE | re.DOTALL
-            )
-            if match and match.end() > 0:
-                section_extracted = html_content[match.start():idx + match.end()]
-
-        # Extrahovat speakable paragraphy z ogm-content__richContent
-        if section_extracted:
-            speakable_paras = re.findall(r'class="[^"]*speakable[^<]*>(.*?)</div>', section_extracted[:10000], re.DOTALL)
-        
-            # Pokud nebyly nalezeny speakable paragraphy, zkusit všechny <p> v sekci
-            if not speakable_paras:
-                speakable_paras = re.findall(r'<p[^>]*>(.*?)</p>', section_extracted, re.DOTALL)
-            
-            article_text_parts = []
-            for sp in speakable_paras:
-                text_p = _strip_html(sp).strip()
-                if len(text_p) > 30 and not any(kw in text_p.lower()[:80] for kw in ['reklama', 'souhlas']):
-                    article_text_parts.append(text_p)
-            
-            if article_text_parts:
-                combined = _strip_html(' '.join(article_text_parts))
-                combined = re.sub(r'\s+', ' ', combined).strip()
-                combined = re.sub(r'&[a-z]+;', ' ', combined)
-                if len(combined) > 100:
-                    return combined
-
-    # --- Strategie 2: <article> tag ---
-    match = re.search(r'<article[^>]*>(.*?)</article>', html_content, re.IGNORECASE | re.DOTALL)
-    if match:
-        text = _strip_html(match.group(1))
-        if len(text.strip()) > 100:
-            return text.strip()
-
-    # --- Strategie 3: <main> tag ---
-    match = re.search(r'<main[^>]*>(.*?)</main>', html_content, re.IGNORECASE | re.DOTALL)
-    if match:
-        text = _strip_html(match.group(1))
-        if len(text.strip()) > 100:
-            return text.strip()
-
-    # --- Strategie 4: Filtr paragraphů (rozhlas-style) ---
-    all_paras = re.findall(r'<p[^>]*>(.*?)</p>', html_content, re.DOTALL)
-    if len(all_paras) > 5:
-        article_paras = []
-        
-        # Procházíme od začátku – pro rozhlas-style jsou article texty hned na začátku
-        for idx_p, p in enumerate(all_paras[:12]):
-            text_p = _strip_html(p).strip()
-            
-            if not text_p:
-                continue
-            
-            first_word = text_p.split()[0].lower() if text_p.split() else ""
-            skip_keywords_first = ['menu', 'hlavní menu', 'zavřít menu', 'souhlas', 'cookies']
-            
-            # Kontrola prvního slova – pokud odpovídá navigaci/consent, přeskočíme
-            if any(kw in first_word for kw in skip_keywords_first):
-                continue
-            
-            # Kontrola celého <p> na klíčová slova (pro consent texty)
-            p_lower_full = html_content.lower()
-            
-            consent_nav_keywords = ['reklama', 'souhlas', 'cookies', 'banner', 'prihlasit']
-            if any(kw in p_lower_full for kw in consent_nav_keywords):
-                continue
-            
-            # Kontrola: zda obsah <p> vypadá jako navigace (mnoho odkazů)  
-            # Pokud text obsahuje několik nav-liNK-like vzorců, je to pravděpodobně navigace
-            link_word_count = len(re.findall(r'[A-Z][a-záéíýůÁÉÍÝŮáéíýů]+(?:\s+[A-Z][a-záéíýůÁÉÍÝŮáéíýů]+)+', text_p.lower()))
-            if link_word_count > 3 and len(text_p) < 500:
-                # Mnoho krátkých slovní spojení = navigace
-                continue
-            
-            # Zbývající <p> jsou article texty (musí mít minimální délku)
-            if len(text_p) > 20:
-                article_paras.append(text_p)
-        
-        combined = _strip_html(' '.join(article_paras))
-        # Odstranit nadbytečné mezernaty a HTML entity
-        combined = re.sub(r'\s+', ' ', combined).strip()
-        combined = re.sub(r'&[a-z]+;', ' ', combined)
-        if len(combined) > 100:
-            return combined
-
-    # --- Strategie 5: Fallback – body text bez scripts/styles ---
-    text = _strip_html(html_content)
-    
-    # Odfiltruj consent/nav content z fallback textu
-    paragraphs = [p.strip() for p in re.split(r'\s+', text) if len(p) > 20]
-    if len(paragraphs) > 10:
-        article_text = ' '.join(paragraphs[8:])
-        article_text = _strip_html(article_text).strip()
-        if len(article_text) > 100:
-            return article_text
-    
-    # Fallback z OG description (pro paywalled stránky – iDNES, lidovky)
-    desc_match = re.search(
-        r'property=["\']og:description["\'][^>]*content=["\']([^"\']+)["\']',
-        html_content, re.IGNORECASE
-    )
-    if desc_match:
-        text = _strip_html(desc_match.group(1))
-        # Odfiltruj HTML entity pro lepší čitelnost  
-        text_clean = re.sub(r'&[a-z]+;', ' ', text).strip()
-        if len(text_clean) > 50:
-            return text_clean
-
-    return ""
-
-
-def _strip_html(html):
-    """Strhne HTML tags a vrátí čistý text."""
-    # Odstranit attributes (např. <p class="..."> → <p>)
-    html = re.sub(r'<(/?[^>]+)\s+([^>]*)>', r'<\1', html)
-    # Odstranit zbylé tags
-    text = re.sub(r'<[^>]+>', ' ', html)
-    return _clean_text(text)
-
-
-# =============================================================================
 # Funkce – načtení článků z CSV (Phase 2)
 # =============================================================================
 
 def _extrahovat_url_pro_naceni(raw_radek):
     """
-    Vyberne URL pro načtení článku z CSV řádku.
+    Vybere URL pro načtení článku a kontroluje, zda řádek potřebuje scrap.
 
-    Priorita:
+    Priorita URL:
       1. 'Originální internetový zdroj' (externí URL článku)
-      2. 'URL článku' (pouze pokud první není dostupné)
+      2. 'URL článku' (pouze pokud první není dostupné – NewtonOne interní odkaz)
+
+    Filtrování:
+      - Pokud má řádek již vyplněný 'Plné znění', vrátí None
+        (scrapování se neprovede, existující text zůstává nedotčen).
 
     Parameters
     ----------
@@ -372,20 +194,24 @@ def _extrahovat_url_pro_naceni(raw_radek):
 
     Vrací
     -----
-    str nebo None
-        URL k článku, která je plně externí a přístupná HTTP požadavkem.
+    tuple[int, str, str] nebo None
+        (index_1based, full_raw_row, url) pokud scrapování provedeme;
+        jinak None.
     """
+    # Filtrování – pouze řádky bez vyplněného Plné znění jsou kandidáty pro scrap
+    plne_zneni = (raw_radek.get("Plné znění", "") or "").strip()
+    if not plne_zneni:
+        pass  # dál pokračujeme, tento řádek potřebuje scrap
+
     # Priorita 1: Originální internetový zdroj (externí odkaz na článek)
     url = raw_radek.get("Originální internetový zdroj", "").strip()
     if is_valid_url(url):
-        return url
+        return (len(raw_radek), raw_radek, url)
 
     # Fallback: URL článku (NewtonOne monitoring link – pro starší data)
     url = raw_radek.get("URL článku", "").strip()
     if is_valid_url(url):
-        # NewtonOne internal links are not fetchable as articles
-        # but we still validate them so the pipeline continues gracefully
-        return url
+        return (len(raw_radek), raw_radek, url)
 
     return None
 
@@ -394,17 +220,20 @@ def nacti_z_ukazku_csv(cesta_csv):
     """
     Načte CSV soubor, extrahuje URL článků a pro každé platné URL načte plný text.
 
+    Logika: jeden průchod daty – při čtení řádku se rozhodneme, zda jej scrapovat
+    (pokud nemá Plné znění vyplněno). Načtené výsledky jsou později připojeny
+    k odpovídajícímu řádku.
+
     Parameters
     ----------
     cesta_csv : str
-        Cesta k vstupnímu CSV souboru (musí obsahovat sloupec 'Originální internetový zdroj'
-        nebo alespoň 'URL článku').
+        Cesta k vstupnímu CSV souboru.
 
     Vrací
     -----
     list[dict]
-        Seznam přetvořených řádků s přidaným 'Plné znění' z načteného URL.
-        Řádky bez platného URL se vrátí s prázdným textem.
+        Seznam přetvořených řádků se sloupci z CSV a případně s vyplněným
+        'Plné znění' a 'Paywall'.
     """
     if not os.path.exists(cesta_csv):
         print(f"❌ Vstupní CSV soubor neexistuje: {cesta_csv}")
@@ -416,15 +245,9 @@ def nacti_z_ukazku_csv(cesta_csv):
         print("⚠️ Žádné řádky k zpracování.")
         return []
 
-    # Filtrovat: pouze řádky, které ještě nemají vyplněné "Plné znění"
-    urls = []
-    for i, r in enumerate(raw_radky):
-        plne_zneni = (r.get("Plné znění", "") or "").strip()
-        if not plne_zneni:
-            url = _extrahovat_url_pro_naceni(r)
-            if url:
-                urls.append((i + 1, r, url))
-    batch_results = nacit_batch_artikul(urls)
+    # Jeden průchod – filtrovat a získat URL pro scrapování
+    items = [item for item in [_extrahovat_url_pro_naceni(r) for r in raw_radky] if item is not None]
+    batch_results = nacit_batch_artikul(items, timeout=30)
 
     # Build lookup by index (1-based)
     text_lookup = {}  # {index: result_dict}
@@ -433,7 +256,7 @@ def nacti_z_ukazku_csv(cesta_csv):
         if idx is not None and result.get("text"):
             text_lookup[idx] = result
 
-    # Připojit výsledky zpět do CSV dat
+    # Připojit výsledky zpět do CSV dat – jeden průchod pro transformaci
     vysledky = []
     for i, raw_radek in enumerate(raw_radky):
         vysledek = {}
@@ -442,7 +265,7 @@ def nacti_z_ukazku_csv(cesta_csv):
             hodnota = raw_radek.get(nazev, "")
 
             if sloupec.get("strip_space"):
-                hodnota = _clean_text(hodnota)
+                hodnota = html_clean_text(hodnota)
 
             if not hodnota:
                 hodnota = ""
@@ -469,7 +292,6 @@ def nacti_z_ukazku_csv(cesta_csv):
         index_1based = i + 1
         if index_1based in text_lookup:
             vysledek["Plné znění"] = text_lookup[index_1based]
-        # Pokud již existuje hodnota z CSV, neměníme ji (je už vyplněno)
 
         # Přidat detekci paywallu – pouze pokud byl řádek vyfiltrován k scrapování
         if index_1based in text_lookup:
