@@ -1,0 +1,20 @@
+{
+  "sources": {
+    "zpravy.iDNES.cz": {
+      "meta_tags": [
+        {"name": "cXenseParse:qiw-content", "value_contains": "premium"}
+      ],
+      "fallback": null
+    },
+    "www.zpravy.iDNES.cz": {
+      "meta_tags": [
+        {"name": "cXenseParse:qiw-content", "value_contains": "premium"}
+      ],
+      "fallback": null
+    }
+  },
+  "defaults": {
+    "fallback_enabled": true,
+    "min_text_ratio_for_paywall": 0.3
+  }
+}

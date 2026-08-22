@@ -11,6 +11,7 @@ import urllib.error
 import urllib.request
 
 
+from src.detect_paywall import check_paywall
 from src.newton_one.data_io import nacti_csv, ulozit_jsonl
 
 
@@ -88,7 +89,12 @@ def nacit_artikl(url, timeout=30):
     title = _extract_title(html_content) or ""
     text = _extract_body_text(html_content) or ""
 
-    result = {"text": _clean_text(text), "title": _clean_text(title)}
+    # Detekce paywallu na základě HTML a zdrojového webu
+    from urllib.parse import urlparse as _parse_url
+    parsed = _parse_url(url)
+    domain = parsed.netloc.lower().split(":")[0] if parsed.netloc else ""
+    
+    result = {"text": _clean_text(text), "title": _clean_text(title), "paywall": check_paywall(html_content, url)}
     
     # Fallback: pokud se text nepodařilo extrahovat, použijeme og:description
     if not text.strip() and title:
@@ -450,6 +456,10 @@ def nacti_z_ukazku_csv(cesta_csv):
             vysledek["Plné znění"] = batch_results[i]["text"]
         else:
             vysledek["Plné znění"] = ""
+
+        # Přidat detekci paywallu (True → "ano", False → "ne")
+        if i < len(batch_results):
+            vysledek["Paywall"] = "ano" if batch_results[i].get("paywall") else "ne"
 
         vysledky.append(vysledek)
 

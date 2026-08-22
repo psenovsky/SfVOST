@@ -26,6 +26,7 @@ SLoupce = [
     {"nazev": "Typ média",             "typ": str},
     {"nazev": "Anotace",               "typ": str},
     {"nazev": "Plné znění",            "typ": str},
+    {"nazev": "Paywall",               "typ": str},
     {"nazev": "Originální internetový zdroj", "typ": str, "strip_space": True},
     {"nazev": "Typ zprávy",            "typ": str},
     {"nazev": "Sentiment",             "typ": str},
