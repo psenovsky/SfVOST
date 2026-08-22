@@ -1,3 +1,10 @@
+# /// script
+# requires-python = ">=3.14"
+# dependencies = [
+#     "requests>=2.32.3",
+# ]
+# ///
+
 # -*- coding: utf-8 -*-
 
 """Načítání plných textů článků z URL (Phase 3 – rate limiting)."""
@@ -30,6 +37,24 @@ def get_scraper_delay():
         return int(delay_str)
     except (_configparser.NoSectionError, _configparser.NoOptionError):
         return 5
+
+
+def get_article_encoding():
+    """Vrátí default encoding článku z config.ini (fallback při absenci meta tagu)."""
+
+    try:
+        enc = _cfg.get("scraper", "article_encoding")
+        # Normalizace kódovacích jmen
+        encoding_map = {
+            "utf-8": "utf-8",
+            "windows-1250": "cp1250",
+            "latin-2": "iso-8859-2",
+            "cp1250": "cp1250",
+            "cp1252": "cp1252",
+        }
+        return encoding_map.get(enc.lower(), enc)
+    except (_configparser.NoSectionError, _configparser.NoOptionError):
+        return "utf-8"  # výchozí fallback
 
 
 # Singleton cache pro inicializaci modelů jednou (Phase 4 – optimalizace API volání)
@@ -78,12 +103,37 @@ def nacit_artikl(url, timeout=30):
         print(f"⚠️ Chyba načítání {url}: {exc}")
         return {}
 
+    # Detekce encodingu z meta tagu charset
+    html_preview = html_bytes[:512].decode("ascii", errors="ignore")
+    charset_match = re.search(r'<meta[^>]+charset=["\']?([^;"\'>\s]+)', html_preview, re.IGNORECASE)
+    if charset_match:
+        encoding_name = charset_match.group(1).strip().lower()
+        # Normalizace běžných kódovacích jmen
+        encoding_map = {
+            "windows-1250": "cp1250",
+            "latin-2": "iso-8859-2",
+            "cp1250": "cp1250",
+            "cp1252": "cp1252",
+        }
+        encoding = encoding_map.get(encoding_name, encoding_name)
+    else:
+        # Fallback na default encoding z config.ini (nebo utf-8)
+        article_encoding = get_article_encoding()
+        encoding = article_encoding
+
+    print(f"📝 Detekován encoding pro {url}: {encoding}")
+
     # Kontrola, zda HTML obsahuje příliš mnoho binárních dat (např. 404 body s binary)
     try:
-        html_content = html_bytes.decode("utf-8", errors="replace")
-    except UnicodeDecodeError:
-        print(f"⚠️ Chyba UTF-8 dekodování pro {url}")
-        return {}
+        html_content = html_bytes.decode(encoding, errors="replace")
+    except UnicodeDecodeError as exc:
+        print(f"⚠️ Chyba {encoding} dekodování pro {url}: {exc}")
+        # Zkousnout utf-8 jako fallback
+        try:
+            html_content = html_bytes.decode("utf-8", errors="replace")
+        except UnicodeDecodeError as exc2:
+            print(f"⚠️ Chyba UTF-8 dekodování pro {url}: {exc2}")
+            return {}
 
     # Odstranit binární šum (neregulérné znaky s vysokým kódovým číslem)
     html_content = _remove_binary_garble(html_content)
@@ -175,12 +225,12 @@ def nacit_batch_artikul(items, timeout=30):
 # Funkce – načtení článků z CSV (Phase 2)
 # =============================================================================
 
-def _extrahovat_url_pro_naceni(raw_radek):
+def _extrahovat_url_pro_naceni(raw_radek, index_1based=None):
     """
     Vybere URL pro načtení článku a kontroluje, zda řádek potřebuje scrap.
 
     Priorita URL:
-      1. 'Originální internetový zdroj' (externí URL článku)
+      1. 'Originální internetový zdroj' (externí odkaz na článek)
       2. 'URL článku' (pouze pokud první není dostupné – NewtonOne interní odkaz)
 
     Filtrování:
@@ -191,6 +241,9 @@ def _extrahovat_url_pro_naceni(raw_radek):
     ----------
     raw_radek : dict[str, str]
         Jeden řádek z CSV.
+    index_1based : int or None
+        1-based index řádku v CSV (pro přiřazení výsledku zpět do outputu).
+        Pokud není zadáno, použije se len(raw_radek) jako fallback.
 
     Vrací
     -----
@@ -199,21 +252,20 @@ def _extrahovat_url_pro_naceni(raw_radek):
         jinak None.
     """
     # Filtrování – pouze řádky bez vyplněného Plné znění jsou kandidáty pro scrap
-    plne_zneni = (raw_radek.get("Plné znění", "") or "").strip()
-    if not plne_zneni:
-        pass  # dál pokračujeme, tento řádek potřebuje scrap
 
     # Priorita 1: Originální internetový zdroj (externí odkaz na článek)
     url = raw_radek.get("Originální internetový zdroj", "").strip()
     if is_valid_url(url):
-        return (len(raw_radek), raw_radek, url)
+        idx = index_1based if index_1based is not None else len(raw_radek)
+        return (idx, raw_radek, url)
 
     # Fallback: URL článku (NewtonOne monitoring link – pro starší data)
     url = raw_radek.get("URL článku", "").strip()
     if is_valid_url(url):
-        return (len(raw_radek), raw_radek, url)
+        idx = index_1based if index_1based is not None else len(raw_radek)
+        return (idx, raw_radek, url)
 
-    return None
+    return None  # Žádná URL → tento řádek bude zahrnut ve výstupu bez scraped dat
 
 
 def nacti_z_ukazku_csv(cesta_csv):
@@ -246,7 +298,7 @@ def nacti_z_ukazku_csv(cesta_csv):
         return []
 
     # Jeden průchod – filtrovat a získat URL pro scrapování
-    items = [item for item in [_extrahovat_url_pro_naceni(r) for r in raw_radky] if item is not None]
+    items = [item for item in [_extrahovat_url_pro_naceni(r, i + 1) for i, r in enumerate(raw_radky)] if item is not None]
     batch_results = nacit_batch_artikul(items, timeout=30)
 
     # Build lookup by index (1-based)
@@ -288,12 +340,12 @@ def nacti_z_ukazku_csv(cesta_csv):
 
             vysledek[nazev] = hodnota
 
-        # Přidat načtený text článku – pouze pokud byl řádek vyfiltrován k scrapování
+        # Přidat načtený text článku – pouze pokud byl řádek vyfiltrován k scrapování a úspěšně načeteno
         index_1based = i + 1
         if index_1based in text_lookup:
-            vysledek["Plné znění"] = text_lookup[index_1based]
+            vysledek["Plné znění"] = html_clean_text(text_lookup[index_1based]["text"])
 
-        # Přidat detekci paywallu – pouze pokud byl řádek vyfiltrován k scrapování
+        # Přidat detekci paywallu – pouze pokud byl řádek vyfiltrován k scrapování a úspěšně načeteno
         if index_1based in text_lookup:
             vysledek["Paywall"] = "ano" if text_lookup[index_1based].get("paywall") else "ne"
 

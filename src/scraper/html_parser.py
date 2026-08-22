@@ -13,6 +13,12 @@ def _clean_text(text):
     return "".join(ch for ch in text if ch not in UNICODE_WHITESPACE).strip()
 
 
+def _decode_html_entities(text):
+    """Dekoduje HTML entity reference (&#NNN; &#xHHH; &name;) na skutečné znaky."""
+    import html as _html_module
+    return _html_module.unescape(text)
+
+ 
 def _remove_binary_garble(html):
     """Odstraní binární šum z HTML (neregulérné znaky s vysokým kódovým číslem)."""
     # Odstranit znaky mimo rozsah běžného textu (prostore + printable ASCII + Unicode)
@@ -69,6 +75,57 @@ def extract_body_text(html_content):
     # Odstranit scripty a style tagy
     html_content = _re.sub(r'<script[^>]*>.*?</script>', '', html_content, flags=_re.IGNORECASE | _re.DOTALL)
     html_content = _re.sub(r'<style[^>]*>.*?</style>', '', html_content, flags=_re.IGNORECASE | _re.DOTALL)
+
+    # --- Strategie 0: JSON-LD structured data a itemprop (iDNES-style) ---
+    # Hledat <div itemprop="articleBody"> nebo <div class="opener" itemprop="description">
+    body_match = _re.search(r'<(?:div|section)[^>]*itemprop=["\'](?:articleBody|description)["\'][^>]*(?:[^<>]*){0,10}', html_content)
+    if body_match:
+        # Najít odpovídající closing tag
+        open_tag = body_match.group(0)[:50]
+        depth, end_pos = 0, -1
+        for i in range(body_match.start(), len(html_content)):
+            if html_content[i:i+4] == '</div>':
+                depth -= 1
+                if depth < 0:
+                    end_pos = i + 6; break
+            elif html_content[i:i+3] == '<li' and ' itemprop="articleBody"' in html_content[max(0, body_match.start()-5):i]:
+                pass
+
+        if end_pos > 0 and (end_pos - body_match.start()) > 100:
+            section_text = html_content[body_match.start():end_pos]
+            # Extrahovat text z speakable paragraphů
+            paras = _re.findall(r'<p[^>]*>(.*?)</p>', section_text, _re.DOTALL)
+            if paras:
+                article_parts = []
+                for sp in paras:
+                    clean_p = _strip_html(sp).strip()
+                    if len(clean_p) > 30 and not any(kw in clean_p.lower()[:80] for kw in ['reklama', 'souhlas']):
+                        article_parts.append(clean_p)
+                if article_parts:
+                    combined = _strip_html(' '.join(article_parts))
+                    combined = _re.sub(r'\s+', ' ', combined).strip()
+                    combined = _re.sub(r'&[a-z]+;', ' ', combined)
+                    if len(combined) > 100:
+                        return combined
+
+    # --- Strategie 0b: JSON-LD structured data (script type="application/ld+json") ---
+    ld_match = _re.search(r'<script[^>]*type=["\']application/ld\+json["\'][^>]*(.*?)</script>', html_content, _re.DOTALL)
+    if ld_match:
+        try:
+            import json as _json_mod
+            data = _json_mod.loads(ld_match.group(1))
+            # Hledat body.content nebo body.htmlContent
+            for key in ['body', 'articleBody']:
+                content_data = data.get(key, {})
+                if isinstance(content_data, dict):
+                    text = content_data.get('content', '') or content_data.get('htmlContent', '') or ''
+                    if text and len(text) > 100:
+                        # Vytvořit čistý text z JSON-LD (bez HTML entity jako &#225;)
+                        clean_text = _strip_html(_re.sub(r'\s+', ' ', text)).strip()
+                        if any(kw in clean_text.lower() for kw in ['tornádo', 'bouře', 'článok', 'news']):
+                            return clean_text[:10000]  # Limit na délku
+        except (json.JSONDecodeError, TypeError):
+            pass
 
     # --- Strategie 1: novinky-style – ogm-content__richContent div (speakable paragraphs) ---
     idx = html_content.find('class="g_fp g_bG')
@@ -167,9 +224,9 @@ def extract_body_text(html_content):
                 article_paras.append(text_p)
         
         combined = _strip_html(' '.join(article_paras))
-        # Odstranit nadbytečné mezernaty a HTML entity
+        # Odstranit nadbytečné mezernaty a dekodovat HTML entity
         combined = _re.sub(r'\s+', ' ', combined).strip()
-        combined = _re.sub(r'&[a-z]+;', ' ', combined)
+        combined = _decode_html_entities(combined)
         if len(combined) > 100:
             return combined
 
@@ -191,8 +248,9 @@ def extract_body_text(html_content):
     )
     if desc_match:
         text = _strip_html(desc_match.group(1))
-        # Odfiltruj HTML entity pro lepší čitelnost  
-        text_clean = _re.sub(r'&[a-z]+;', ' ', text).strip()
+        # Dekodovat HTML entity (&#225; -> á) a odstranit nadbytečné mezernaty
+        text = _decode_html_entities(text)
+        text_clean = _re.sub(r'\s+', ' ', text).strip()
         if len(text_clean) > 50:
             return text_clean
 
