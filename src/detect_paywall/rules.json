@@ -11,6 +11,18 @@
         {"name": "cXenseParse:qiw-content", "value_contains": "premium"}
       ],
       "fallback": null
+    },
+    "idnes.cz": {
+      "meta_tags": [
+        {"name": "cXenseParse:qiw-content", "value_contains": "premium"}
+      ],
+      "fallback": null
+    },
+    "www.idnes.cz": {
+      "meta_tags": [
+        {"name": "cXenseParse:qiw-content", "value_contains": "premium"}
+      ],
+      "fallback": null
     }
   },
   "defaults": {
