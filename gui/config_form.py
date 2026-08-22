@@ -29,6 +29,7 @@ class ConfigForm(QWidget):
             "BlueSky": "BlueSky",
             "LLM": "LLM",
             "ner": "NER (pojmenované entity)",
+            "scraper": "Scraper",
         }
 
         labels = {
@@ -59,6 +60,9 @@ class ConfigForm(QWidget):
             },
             "ner": {
                 "modely": "Modely (JSON: jazyk → spaCy model)",
+            },
+            "scraper": {
+                "delay": "Prodleva mezi články (s)",
             },
         }
 
