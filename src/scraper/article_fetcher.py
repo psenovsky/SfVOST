@@ -184,9 +184,12 @@ def _is_readable_text(text):
 
 
 def _remove_binary_garble(html):
-    """Odstraní binární šum z HTML (neregulérné znaky s vysokým kódovým číslem)."""
-    # Odstranit znaky mimo rozsah běžného textu (prostore + printable ASCII + Unicode)
-    return re.sub(r'[^\x20-\xff]', '', html)
+    """Odstraní binární šum z HTML — pouze skutečné nekonzistentní znaky.
+
+    Nepoškozovat platné Unicode znaky (diakritika, rozšířené latin).
+    Odstraňuje jen: null byte + kontrolní znaky < 0x20 (kromě \t \n \r)."""
+    bad = re.sub(r'[\x00-\x1f]', '', html)
+    return bad
 
 
 def nacit_batch_artikul(items, timeout=30):
