@@ -63,6 +63,7 @@ class ConfigForm(QWidget):
             },
             "scraper": {
                 "delay": "Prodleva mezi články (s)",
+                "article_encoding": "Encoding článku",
             },
         }
 
