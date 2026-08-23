@@ -1,9 +1,13 @@
+# -*- coding: utf-8 -*-
+
 # /// script
 # requires-python = ">=3.14"
 # dependencies = [
 #     "requests>=2.32.3",
 # ]
 # ///
+
+# -*- coding: utf-8 -*-
 
 """Načítání plných textů článků z URL (Phase 3 – rate limiting)."""
 
@@ -320,42 +324,4 @@ def nacti_z_ukazku_csv(cesta_csv):
     return vysledky
 
 
-# =============================================================================
-# Hlavní vstupní bod pro scraper CLI (Phase 2)
-# =============================================================================
 
-def main():
-    """Hlavní vstupní bod skriptu."""
-    description = (
-        "CLI utilita pro načtení CSV s URL článků a získání plných textů."
-    )
-    parser = __import__("argparse").ArgumentParser(
-        prog='scraper.py',
-        description=description,
-        formatter_class=__import__("argparse").ArgumentParser.RawTextHelpFormatter)
-    parser.add_argument("-c", "--csv", help="cesta k CSV souboru se sloupcem 'URL článku'")
-    parser.add_argument("-o", "--output", help="výstupní JSONL soubor")
-
-    args = parser.parse_args()
-
-    if not args.csv or not args.output:
-        parser.print_help()
-        exit(0)
-
-    # Kontrola existenci vstupního souboru
-    if not os.path.exists(args.csv):
-        print(f"❌ Vstupní CSV soubor {args.csv} neexistuje.")
-        exit(1)
-
-    # Načtení článků z URL
-    vysledky = nacti_z_ukazku_csv(args.csv)
-    if not vysledky:
-        print("⚠️ Žádné data pro zápis.")
-        exit(0)
-
-    # Zápis do JSONL
-    ulozit_jsonl(vysledky, args.output)
-
-
-if __name__ == "__main__":
-    main()

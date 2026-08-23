@@ -7,7 +7,7 @@ import os
 
 
 from src.newton_one.data_io import nacti_csv, pretvorit_radku, ulozit_jsonl
-from src.scraper.article_fetcher import nacti_z_ukazku_csv
+from src.scraper.article_fetcher import nacit_batch_artikul, _extrahovat_url_pro_naceni, nacti_z_ukazku_csv
 
 
 def main():
