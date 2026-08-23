@@ -5,8 +5,6 @@
 # ]
 # ///
 
-# -*- coding: utf-8 -*-
-
 """Načítání plných textů článků z URL (Phase 3 – rate limiting)."""
 
 import configparser as _configparser
