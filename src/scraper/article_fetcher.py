@@ -63,7 +63,8 @@ from src.newton_one.utils import is_valid_url
 # HTML parsing (extract_title, extract_body_text) a _clean_text přes modulem
 from src.scraper.html_parser import (_clean_text as html_clean_text,
                                      extract_body_text as _extract_body_text,
-                                     extract_title as _extract_title)
+                                     extract_title as _extract_title,
+                                     _remove_binary_garble)
 
 
 # =============================================================================
@@ -133,9 +134,9 @@ def nacit_artikl(url, timeout=30):
             print(f"⚠️ Chyba UTF-8 dekodování pro {url}: {exc2}")
             return {}
 
-    # Odstranit binární šum (neregulérné znaky s vysokým kódovým číslem)
+    # Odstranit binární šum (kontrolní znaky)
     html_content = _remove_binary_garble(html_content)
-
+    
     title = _extract_title(html_content) or ""
     text = _extract_body_text(html_content) or ""
 
@@ -145,49 +146,12 @@ def nacit_artikl(url, timeout=30):
     domain = parsed.netloc.lower().split(":")[0] if parsed.netloc else ""
     
     result = {"text": html_clean_text(text), "title": html_clean_text(title), "paywall": check_paywall(html_content, url)}
-    
-    # Fallback: pokud se text nepodařilo extrahovat, použijeme og:description
-    if not text.strip() and title:
-        desc_match = re.search(
-            r'property=["\']og:description["\'][^>]*content=["\']([^"\']+)["\']',
-            html_content, re.IGNORECASE
-        )
-        if desc_match:
-            result["text"] = html_clean_text(desc_match.group(1))
 
     # Validace: pokud je text krátký a vypadá jako binární data, vyhodíme ho
-    if not text.strip() and title:
-        # Zkusit ještě OG description  
-        pass
-    
+
     print(f"✅ Načteno: {url[:80]}{'...' if len(url) > 80 else ''}")
     return result
 
-
-def _is_readable_text(text):
-    """Zkontroluje, zda je text čitelný (ne binární data)."""
-    if not text or not isinstance(text, str):
-        return False
-    
-    # Pokud obsahuje hodně nepříjemných znaků (>50% neprintovatelných), není to text
-    printable_chars = sum(1 for ch in text if 32 <= ord(ch) <= 126 or ch in '\t\n\r')
-    total_chars = len(text)
-    
-    if total_chars == 0:
-        return False
-    
-    # Pokud je více než polovina znaků nepříjemných, text vypadá jako binární data
-    non_printable_ratio = (total_chars - printable_chars) / total_chars
-    return non_printable_ratio < 0.5
-
-
-def _remove_binary_garble(html):
-    """Odstraní binární šum z HTML — pouze skutečné nekonzistentní znaky.
-
-    Nepoškozovat platné Unicode znaky (diakritika, rozšířené latin).
-    Odstraňuje jen: null byte + kontrolní znaky < 0x20 (kromě \t \n \r)."""
-    bad = re.sub(r'[\x00-\x1f]', '', html)
-    return bad
 
 
 def nacit_batch_artikul(items, timeout=30):

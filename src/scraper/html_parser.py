@@ -19,17 +19,12 @@ def _decode_html_entities(text):
     import html as _html_module
     return _html_module.unescape(text)
 
- 
+
 def _remove_binary_garble(html):
-    """Odstraní binární šum z HTML (neregulérné znaky s vysokým kódovým číslem)."""
-    # Odstranit znaky mimo rozsah běžného textu (prostore + printable ASCII + Unicode)
-    return _re.sub(r'[^\x20-\xff]', '', html)
+    """Odstraní binární šum z HTML (kontrolní znaky < 0x20, kromě \t\n\r)."""
+    return _re.sub(r'[\x00-\x1f]', '', html)
 
 
-def _strip_html(html):
-    """Strhne HTML tags a vrátí čistý text."""
-    soup = _bs4.BeautifulSoup(html, "html.parser")
-    return _clean_text(soup.get_text())
 
 
 def extract_title(html_content):
@@ -94,9 +89,8 @@ def extract_body_text(html_content):
                 if isinstance(content_data, dict):
                     text = content_data.get('content', '') or content_data.get('htmlContent', '') or ''
                     if text and len(text) > 100:
-                        clean_text = _strip_html(_re.sub(r'\s+', ' ', text)).strip()
-                        if any(kw in clean_text.lower() for kw in ['tornádo', 'bouře', 'článok', 'news']):
-                            return clean_text[:10000]
+                        clean_text = _re.sub(r'\s+', ' ', text).strip()
+                        return clean_text[:10000]
         except (json.JSONDecodeError, TypeError):
             pass
 
@@ -201,19 +195,3 @@ def extract_body_text(html_content):
 
     return ""
 
-
-def is_readable_text(text):
-    """Zkontroluje, zda je text čitelný (ne binární data)."""
-    if not text or not isinstance(text, str):
-        return False
-    
-    # Pokud obsahuje hodně nepříjemných znaků (>50% neprintovatelných), není to text
-    printable_chars = sum(1 for ch in text if 32 <= ord(ch) <= 126 or ch in '\t\n\r')
-    total_chars = len(text)
-    
-    if total_chars == 0:
-        return False
-    
-    # Pokud je více než polovina znaků nepříjemných, text vypadá jako binární data
-    non_printable_ratio = (total_chars - printable_chars) / total_chars
-    return non_printable_ratio < 0.5
