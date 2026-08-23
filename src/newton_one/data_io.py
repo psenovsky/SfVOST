@@ -37,10 +37,10 @@ def nacti_csv(cesta_csv):
     radky = []
     with open(cesta_csv, "r", encoding=ENCODING, newline="") as f:
         reader = _csv.DictReader(f, delimiter=CSV_SEP)
-        for jazyk in reader:
-            if not jazyk or all(not v.strip() for v in jazyk.values()):
+        for radek in reader:
+            if not radek or all(not v.strip() for v in radek.values()):
                 continue
-            radky.append(jazyk)
+            radky.append(radek)
 
     print(f"✅ Načteno {len(radky)} řádků z souboru {cesta_csv}")
     return radky
