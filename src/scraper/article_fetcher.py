@@ -12,12 +12,13 @@
 """Načítání plných textů článků z URL (Phase 3 – rate limiting)."""
 
 import configparser as _configparser
-import json as _json
+import datetime as _datetime
 import os
 import re
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlparse as _parse_url
 
 
 from src.detect_paywall import check_paywall
@@ -41,20 +42,20 @@ def get_scraper_delay():
         return 5
 
 
+ENCODING_MAP: dict[str, str] = {
+    "windows-1250": "cp1250",
+    "latin-2": "iso-8859-2",
+    "cp1250": "cp1250",
+    "cp1252": "cp1252",
+}
+
+
 def get_article_encoding():
     """Vrátí default encoding článku z config.ini (fallback při absenci meta tagu)."""
 
     try:
         enc = _cfg.get("scraper", "article_encoding")
-        # Normalizace kódovacích jmen
-        encoding_map = {
-            "utf-8": "utf-8",
-            "windows-1250": "cp1250",
-            "latin-2": "iso-8859-2",
-            "cp1250": "cp1250",
-            "cp1252": "cp1252",
-        }
-        return encoding_map.get(enc.lower(), enc)
+        return ENCODING_MAP.get(enc.lower(), enc)
     except (_configparser.NoSectionError, _configparser.NoOptionError):
         return "utf-8"  # výchozí fallback
 
@@ -106,23 +107,15 @@ def nacit_artikl(url, timeout=30):
         print(f"⚠️ Chyba načítání {url}: {exc}")
         return {}
 
-    # Detekce encodingu z meta tagu charset
+    # Detekce encodingu z meta tagu charset (nebo fallback)
     html_preview = html_bytes[:512].decode("ascii", errors="ignore")
-    charset_match = re.search(r'<meta[^>]+charset=["\']?([^;"\'>\s]+)', html_preview, re.IGNORECASE)
-    if charset_match:
-        encoding_name = charset_match.group(1).strip().lower()
-        # Normalizace běžných kódovacích jmen
-        encoding_map = {
-            "windows-1250": "cp1250",
-            "latin-2": "iso-8859-2",
-            "cp1250": "cp1250",
-            "cp1252": "cp1252",
-        }
-        encoding = encoding_map.get(encoding_name, encoding_name)
+    
+    if re.search(r'<meta[^>]+charset=["\']?([^;"\'>\s]+)', html_preview, re.IGNORECASE):
+        encoding_name = re.search(r'<meta[^>]+charset=["\']?([^;"\'>\s]+)', html_preview, re.IGNORECASE).group(1).strip().lower()
+        # Normalizace běžných kódovacích jmen (použito i v get_article_encoding())
+        encoding = ENCODING_MAP.get(encoding_name, encoding_name)
     else:
-        # Fallback na default encoding z config.ini (nebo utf-8)
-        article_encoding = get_article_encoding()
-        encoding = article_encoding
+        encoding = get_article_encoding()
 
     print(f"📝 Detekován encoding pro {url}: {encoding}")
 
@@ -145,7 +138,6 @@ def nacit_artikl(url, timeout=30):
     text = _extract_body_text(html_content) or ""
 
     # Detekce paywallu na základě HTML a zdrojového webu
-    from urllib.parse import urlparse as _parse_url
     parsed = _parse_url(url)
     domain = parsed.netloc.lower().split(":")[0] if parsed.netloc else ""
     
@@ -292,11 +284,10 @@ def nacti_z_ukazku_csv(cesta_csv):
                 hodnota = ""
 
             if nazev == "Datum publikování":
-                from datetime import datetime
                 date_str = hodnota.strip()
                 for fmt in ("%Y-%m-%d", "%d.%m.%Y %H:%M"):
                     try:
-                        hodnota = datetime.strptime(date_str, fmt).strftime("%Y-%m-%d")
+                        hodnota = _datetime.datetime.strptime(date_str, fmt).strftime("%Y-%m-%d")
                         break
                     except ValueError:
                         continue

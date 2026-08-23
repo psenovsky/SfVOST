@@ -5,6 +5,7 @@
 import json as _json
 import os
 import re
+from urllib.parse import urlparse as _parse_url
 
 
 def check_paywall(html: str, source_url: str) -> bool:
@@ -64,8 +65,7 @@ def _extract_domain(url: str) -> str:
         return ""
     
     try:
-        from urllib.parse import urlparse
-        parsed = urlparse(url)
+        parsed = _parse_url(url)
         domain = parsed.netloc.lower()
         # Odstranit port pokud existuje
         domain = domain.split(":")[0]
