@@ -68,16 +68,31 @@ def extract_body_text(html_content):
     str
         Čistý text článku, nebo prázdný string pokud nelze extrahovat.
     """
-    # Odstranit scripty a style tagy
     soup = _bs4.BeautifulSoup(html_content, "html.parser")
+    # DEBUG vypsání HTML stránky
+    # print(str(soup))
+    # exit() #DEBUG
+
+    # iDnes.cz
+    meta_tag = soup.find("meta", attrs={"property": "og:site_name", "content": "iDNES.cz"})
+    if meta_tag:
+        desc = soup.select_one('div.opener[itemprop="description"]')
+        body = soup.select_one('div[itemprop="articleBody"]')
+        # print(desc, body) # DEBUG
+        desc_text = desc.get_text(strip=True)
+        body_text = body.get_text(strip=True)
+        return f"{desc_text}\n\n{body_text}"
+
+    # Odstranit scripty a style tagy
     for tag in list(soup.find_all(["script", "style"])):
         tag.decompose()
 
+    # TODO po otestování smazat
     # --- Strategie 0: itemprop (iDNES-style) ---
-    for elem in soup.select('[itemprop="articleBody"], [itemprop="description"]'):
-        text = _clean_text(elem.get_text())
-        if len(text.strip()) > 100:
-            return text
+    #for elem in soup.select('[itemprop="articleBody"], [itemprop="description"]'):
+    #    text = _clean_text(elem.get_text())
+    #    if len(text.strip()) > 100:
+    #        return text
 
     # --- Strategie 0b: JSON-LD structured data (script type="application/ld+json") ---
     for script in soup.find_all("script", type="application/ld+json"):
@@ -172,7 +187,7 @@ def extract_body_text(html_content):
 
     # --- Strategie 5: Fallback – body text bez scripts/styles ---
     text = soup.get_text()
-    
+
     paragraphs = [p.strip() for p in text.split() if len(p) > 20]
     if len(paragraphs) > 10:
         article_text = ' '.join(paragraphs[8:])
@@ -194,4 +209,3 @@ def extract_body_text(html_content):
         return _clean_text(soup.get_text())
 
     return ""
-

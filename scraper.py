@@ -28,11 +28,6 @@ def main():
         parser.print_help()
         exit(0)
 
-    # Kontrola existenci vstupního souboru
-    if not os.path.exists(args.csv):
-        print(f"❌ Vstupní CSV soubor {args.csv} neexistuje.")
-        exit(1)
-
     # Načtení článků z URL
     vysledky = nacti_z_ukazku_csv(args.csv)
     if not vysledky:

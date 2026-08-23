@@ -15,9 +15,11 @@ import configparser as _configparser
 import datetime as _datetime
 import os
 import re
+import requests
 import time
 import urllib.error
 import urllib.request
+from bs4 import BeautifulSoup
 from urllib.parse import urlparse as _parse_url
 
 
@@ -94,54 +96,47 @@ def nacit_artikl(url, timeout=30):
         {'text': '<vyčistěný text článku>', 'title': '<název článku>'}
         Pokud je URL neplatná nebo se načtení nepodaří, vrátí prázdný dict.
     """
-    if not url or not html_clean_text(url):
+
+    if not url:
         return {}
 
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "cs-CZ,cs;q=0.9,en;q=0.8",
+    }
+
+    # Cookie, která iDNES říká, že byl udělen souhlas
+    cookies = {
+        "dCMP": "mafra=1111,all=1,reklama=1,part=0,cpex=1,google=1,gemius=1,id5=1,nase=1111,groupm=1,piano=1,seznam=1,geozo=0,czaid=1,click=1,vendors=full,verze=2,",
+        "adsCMP": "czaid=1,groupm=1,id5=1,gemius=1,seznam=1,cpex=1,piano=1,full=1,base=1,google=1,purposes=1,firstPurpose=1,publisher=1111"
+    }
+
+    response = None
+    text = None
+    title = None
     try:
-        req = urllib.request.Request(
-            url, headers={"User-Agent": "Mozilla/5.0 (compatible; SfVOST-Scraper/1.0)"}
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            html_bytes = response.read()
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as exc:
+        response = requests.get(url, headers=headers, cookies=cookies)
+        response.raise_for_status()
+    except requests.RequestException as exc:
         print(f"⚠️ Chyba načítání {url}: {exc}")
-        return {}
+        return {"text": "", "title": "", "paywall": "ne"}
 
     # Detekce encodingu z meta tagu charset (nebo fallback)
-    html_preview = html_bytes[:512].decode("ascii", errors="ignore")
-    
-    if re.search(r'<meta[^>]+charset=["\']?([^;"\'>\s]+)', html_preview, re.IGNORECASE):
-        encoding_name = re.search(r'<meta[^>]+charset=["\']?([^;"\'>\s]+)', html_preview, re.IGNORECASE).group(1).strip().lower()
-        # Normalizace běžných kódovacích jmen (použito i v get_article_encoding())
-        encoding = ENCODING_MAP.get(encoding_name, encoding_name)
+    soup = BeautifulSoup(response.content, "html.parser")
+    print(f"📝 Detekován encoding pro {url}: {soup.original_encoding}")
+    html = str(soup)
+    if soup.title:
+        title = soup.title.string
     else:
-        encoding = get_article_encoding()
+        title = ""
+    text = _extract_body_text(html) or ""
 
-    print(f"📝 Detekován encoding pro {url}: {encoding}")
-
-    # Kontrola, zda HTML obsahuje příliš mnoho binárních dat (např. 404 body s binary)
-    try:
-        html_content = html_bytes.decode(encoding, errors="replace")
-    except UnicodeDecodeError as exc:
-        print(f"⚠️ Chyba {encoding} dekodování pro {url}: {exc}")
-        # Zkousnout utf-8 jako fallback
-        try:
-            html_content = html_bytes.decode("utf-8", errors="replace")
-        except UnicodeDecodeError as exc2:
-            print(f"⚠️ Chyba UTF-8 dekodování pro {url}: {exc2}")
-            return {}
-
-    # Odstranit binární šum (kontrolní znaky)
-    html_content = _remove_binary_garble(html_content)
-    
-    title = _extract_title(html_content) or ""
-    text = _extract_body_text(html_content) or ""
-
+    # TODO asi nepotřebuji - otextovat
     # Detekce paywallu na základě HTML a zdrojového webu
-    parsed = _parse_url(url)
-    domain = parsed.netloc.lower().split(":")[0] if parsed.netloc else ""
-    
-    result = {"text": html_clean_text(text), "title": html_clean_text(title), "paywall": check_paywall(html_content, url)}
+    # parsed = _parse_url(url)
+    # domain = parsed.netloc.lower().split(":")[0] if parsed.netloc else ""
+
+    result = {"text": text, "title": title, "paywall": check_paywall(html, url)}
 
     # Validace: pokud je text krátký a vypadá jako binární data, vyhodíme ho
 
@@ -182,53 +177,6 @@ def nacit_batch_artikul(items, timeout=30):
     return results
 
 
-# =============================================================================
-# Funkce – načtení článků z CSV (Phase 2)
-# =============================================================================
-
-def _extrahovat_url_pro_naceni(raw_radek, index_1based=None):
-    """
-    Vybere URL pro načtení článku a kontroluje, zda řádek potřebuje scrap.
-
-    Priorita URL:
-      1. 'Originální internetový zdroj' (externí odkaz na článek)
-      2. 'URL článku' (pouze pokud první není dostupné – NewtonOne interní odkaz)
-
-    Filtrování:
-      - Pokud má řádek již vyplněný 'Plné znění', vrátí None
-        (scrapování se neprovede, existující text zůstává nedotčen).
-
-    Parameters
-    ----------
-    raw_radek : dict[str, str]
-        Jeden řádek z CSV.
-    index_1based : int or None
-        1-based index řádku v CSV (pro přiřazení výsledku zpět do outputu).
-        Pokud není zadáno, použije se len(raw_radek) jako fallback.
-
-    Vrací
-    -----
-    tuple[int, str, str] nebo None
-        (index_1based, full_raw_row, url) pokud scrapování provedeme;
-        jinak None.
-    """
-    # Filtrování – pouze řádky bez vyplněného Plné znění jsou kandidáty pro scrap
-
-    # Priorita 1: Originální internetový zdroj (externí odkaz na článek)
-    url = raw_radek.get("Originální internetový zdroj", "").strip()
-    if is_valid_url(url):
-        idx = index_1based if index_1based is not None else len(raw_radek)
-        return (idx, raw_radek, url)
-
-    # Fallback: URL článku (NewtonOne monitoring link – pro starší data)
-    url = raw_radek.get("URL článku", "").strip()
-    if is_valid_url(url):
-        idx = index_1based if index_1based is not None else len(raw_radek)
-        return (idx, raw_radek, url)
-
-    return None  # Žádná URL → tento řádek bude zahrnut ve výstupu bez scraped dat
-
-
 def nacti_z_ukazku_csv(cesta_csv):
     """
     Načte CSV soubor, extrahuje URL článků a pro každé platné URL načte plný text.
@@ -250,7 +198,7 @@ def nacti_z_ukazku_csv(cesta_csv):
     """
     if not os.path.exists(cesta_csv):
         print(f"❌ Vstupní CSV soubor neexistuje: {cesta_csv}")
-        return []
+        exit()
 
     # Načíst raw řádky z CSV (pouze data, bez transformací)
     raw_radky = nacti_csv(cesta_csv)
@@ -258,24 +206,17 @@ def nacti_z_ukazku_csv(cesta_csv):
         print("⚠️ Žádné řádky k zpracování.")
         return []
 
-    # Jeden průchod – filtrovat a získat URL pro scrapování
-    items = [item for item in [_extrahovat_url_pro_naceni(r, i + 1) for i, r in enumerate(raw_radky)] if item is not None]
-    batch_results = nacit_batch_artikul(items, timeout=30)
-
-    # Build lookup by index (1-based)
-    text_lookup = {}  # {index: result_dict}
-    for result in batch_results:
-        idx = result.get("index")
-        if idx is not None and result.get("text"):
-            text_lookup[idx] = result
-
     # Připojit výsledky zpět do CSV dat – jeden průchod pro transformaci
     vysledky = []
-    for i, raw_radek in enumerate(raw_radky):
+
+    for raw_radek in raw_radky:
         vysledek = {}
         for sloupec in SLoupce:
             nazev = sloupec["nazev"]
-            hodnota = raw_radek.get(nazev, "")
+            if nazev not in raw_radek:
+                continue
+
+            hodnota = raw_radek[nazev]
 
             if sloupec.get("strip_space"):
                 hodnota = html_clean_text(hodnota)
@@ -301,18 +242,15 @@ def nacti_z_ukazku_csv(cesta_csv):
             vysledek[nazev] = hodnota
 
         # Přidat načtený text článku – pouze pokud byl řádek vyfiltrován k scrapování a úspěšně načeteno
-        index_1based = i + 1
-        if index_1based in text_lookup:
-            vysledek["Plné znění"] = html_clean_text(text_lookup[index_1based]["text"])
-
-        # Přidat detekci paywallu – pouze pokud byl řádek vyfiltrován k scrapování a úspěšně načeteno
-        if index_1based in text_lookup:
-            vysledek["Paywall"] = "ano" if text_lookup[index_1based].get("paywall") else "ne"
+        if raw_radek["Plné znění"] == "":
+            t = nacit_artikl(raw_radek["Originální internetový zdroj"])
+            vysledek["Plné znění"] = t["text"]
+            vysledek["Paywall"] = t["paywall"]
+        else:
+            vysledek["Plné znění"] = raw_radek["Plné znění"]
+            vysledek["Paywall"] = "ne"
 
         vysledky.append(vysledek)
 
     print(f"\n✅ Načteno z CSV {len(raw_radky)} řádků, článků načteno: {sum(1 for r in vysledky if r.get('Plné znění'))}")
     return vysledky
-
-
-
