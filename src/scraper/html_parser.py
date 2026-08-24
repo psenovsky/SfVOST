@@ -108,6 +108,23 @@ def extract_body_text(html_content):
         # print(desc_text, body_text)  # DEBUG
         return f"{desc_text}\n\n{body_text}"
 
+    # eurozpravy.cz
+    if site_name == "EuroZprávy.cz":
+        body = soup.select('div.b-article-body__text.u-last-m0')
+        body_text = ""
+        for b in body:
+            body_text += f"{b.get_text(strip=True)}\n"
+
+        return body_text
+
+    # parlamentnílisty.cz
+    if site_name == "parlamentnilisty.cz":
+        desc = soup.select_one('p.brief')
+        body = soup.select_one('div.article-container')
+        desc_text = desc.get_text(strip=True)
+        body_text = body.get_text(strip=True)
+        # print(desc_text, body_text)  # DEBUG
+        return f"{desc_text}\n\n{body_text}"
 
     # Odstranit scripty a style tagy
     for tag in list(soup.find_all(["script", "style"])):
