@@ -131,11 +131,6 @@ def nacit_artikl(url, timeout=30):
         title = ""
     text = _extract_body_text(html) or ""
 
-    # TODO asi nepotřebuji - otextovat
-    # Detekce paywallu na základě HTML a zdrojového webu
-    # parsed = _parse_url(url)
-    # domain = parsed.netloc.lower().split(":")[0] if parsed.netloc else ""
-
     result = {"text": text, "title": title, "paywall": check_paywall(html, url)}
 
     # Validace: pokud je text krátký a vypadá jako binární data, vyhodíme ho
