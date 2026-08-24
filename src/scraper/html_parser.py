@@ -78,9 +78,18 @@ def extract_body_text(html_content):
     if meta_tag:
         desc = soup.select_one('div.opener[itemprop="description"]')
         body = soup.select_one('div[itemprop="articleBody"]')
-        # print(desc, body) # DEBUG
         desc_text = desc.get_text(strip=True)
         body_text = body.get_text(strip=True)
+        return f"{desc_text}\n\n{body_text}"
+
+    # český rozhlas (plus.rozhlas.cz)
+    meta_tag = soup.find("meta", attrs={"property": "og:site_name", "content": "Plus"})
+    if meta_tag:
+        desc = soup.select_one('div.field.field-perex')
+        body = soup.select_one('div.field.body')
+        desc_text = desc.get_text(strip=True)
+        body_text = body.get_text(strip=True)
+        # print(desc_text, body_text)  # DEBUG
         return f"{desc_text}\n\n{body_text}"
 
     # Odstranit scripty a style tagy
