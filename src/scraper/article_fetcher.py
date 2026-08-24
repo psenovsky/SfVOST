@@ -22,7 +22,6 @@ import urllib.request
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse as _parse_url
 
-
 from src.detect_paywall import check_paywall
 from src.newton_one.data_io import nacti_csv, ulozit_jsonl
 

@@ -105,7 +105,7 @@ def extract_body_text(html_content):
         body = soup.select_one('div.article-body-blocks.js-article-perex')
         desc_text = desc.get_text(strip=True)
         body_text = body.get_text(strip=True)
-        print(desc_text, body_text)  # DEBUG
+        # print(desc_text, body_text)  # DEBUG
         return f"{desc_text}\n\n{body_text}"
 
 
