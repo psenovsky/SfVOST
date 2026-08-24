@@ -73,24 +73,41 @@ def extract_body_text(html_content):
     # print(str(soup))
     # exit() #DEBUG
 
-    # iDnes.cz
-    meta_tag = soup.find("meta", attrs={"property": "og:site_name", "content": "iDNES.cz"})
+    # iDnes.cz, lidovky.cz
+    # meta_tag = soup.find("meta", attrs={"property": "og:site_name", "content": "iDNES.cz"})
+    # meta_tag = soup.find("meta", attrs={"property": "og:site_name", "content": "Lidovky.cz"})
+    meta_tag = soup.find("meta", property="og:site_name")
+    site_name = ""
     if meta_tag:
+        site_name = meta_tag.get("content")
+
+    if site_name == "iDNES.cz" or site_name == "Lidovky.cz":
         desc = soup.select_one('div.opener[itemprop="description"]')
         body = soup.select_one('div[itemprop="articleBody"]')
         desc_text = desc.get_text(strip=True)
         body_text = body.get_text(strip=True)
+        # print(desc_text, body_text)  # DEBUG
         return f"{desc_text}\n\n{body_text}"
 
     # český rozhlas (plus.rozhlas.cz)
-    meta_tag = soup.find("meta", attrs={"property": "og:site_name", "content": "Plus"})
-    if meta_tag:
+    # meta_tag = soup.find("meta", attrs={"property": "og:site_name", "content": "Plus"})
+    if site_name == "Plus":
         desc = soup.select_one('div.field.field-perex')
         body = soup.select_one('div.field.body')
         desc_text = desc.get_text(strip=True)
         body_text = body.get_text(strip=True)
         # print(desc_text, body_text)  # DEBUG
         return f"{desc_text}\n\n{body_text}"
+
+    # denník.cz
+    if site_name == "www.denik.cz":
+        desc = soup.select_one('p.text-xl.js-article-perex.scroll-mt-24')
+        body = soup.select_one('div.article-body-blocks.js-article-perex')
+        desc_text = desc.get_text(strip=True)
+        body_text = body.get_text(strip=True)
+        print(desc_text, body_text)  # DEBUG
+        return f"{desc_text}\n\n{body_text}"
+
 
     # Odstranit scripty a style tagy
     for tag in list(soup.find_all(["script", "style"])):
