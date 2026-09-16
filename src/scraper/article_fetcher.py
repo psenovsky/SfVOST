@@ -237,7 +237,7 @@ def nacti_z_ukazku_csv(cesta_csv):
 
         # Přidat načtený text článku – pouze pokud byl řádek vyfiltrován k scrapování a úspěšně načeteno
         if raw_radek["Plné znění"] == "":
-            if raw_radek["Zdroj"] in ("czpravy.cz", "auto.tn.nova.cz"):
+            if raw_radek["Zdroj"] in ("czpravy.cz", "auto.tn.nova.cz", "cssd.cz"):
                 print(f"❌ {raw_radek['Zdroj']} není funkční, přeskakuji scrapování plného textu")
                 vysledek["Plné znění"] = ""
                 vysledek["Paywall"] = False

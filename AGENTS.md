@@ -24,7 +24,11 @@ Testovací data jsou dostupná v `data/Tornádo 2021_small.csv`. Při použití
 - [x] Fáze 2: Příprava pro webscrapper
 - [ ] Fáze 3: Vývoj a ladění webscraper
 - [x] Fáze 3.1: doplnění prodlevy v načítání článků
-- [ ] Fáze 3.2: identifikace paywall
+- [x] Fáze 3.2: identifikace paywall
+- [x] Fáze 3.3: Aktualizace GUI
+- [x] Fáze 3.4: Detence potřebnosti použití scraperu
+- [x] Fáze 3.5: Kódování jazyka
+- [ ] Fáze 3.6: zdroj idnes.cz
 
 
 ### Fáze 1: Reorganizace `newton_one.py`
@@ -59,3 +63,81 @@ Pro Zdroj `zpravy.iDNES.cz` je informace o paywallu dostupná v metainformacích
 `<meta name="cXenseParse:qiw-content" content="premium">`
 
 Začal jsi implementovat řešení v `src/detect_paywall`. Podívej se kde jsi skončil a zkus pokračovat.
+
+### Fáze 3.3: Aktualizace GUI
+
+`config.ini` se změnil. Přidali jsme tam položku delay, která je zapracovaná do kódu projektu, kromě GUI aplikace v `gui/config_form.py` aktualizuj formulář, přidej podporu pro delay. Nezapomeň upravit nejen formulář, načítání, ale také ukládání konfigurace.
+
+### Fáze 3.4: Detence potřebnosti použití scraperu
+
+Načítání plné verze článku ppomocí `scraper.py` by mělo proběhnout pouze v případě, že plný text v základním souboru CSV není vyplněn. Zkontroluj, že se zbytečně nesnažíme scrapovat web i v případě, kdy to není nutné.
+
+### Fáze 3.5: Kódování jazyka
+
+Zdá se mi, že logika scaperu (`scraper.py`) je příliš složitá. Zkusíme proto postupně diagnostikovat, zda se postupuje při zpracování správným způsobem. 
+
+Postup:
+1) načte se stránka - tak, jak je, tedy bez transformací
+2) detekuje se kodování
+    - primární zdroj informací o kódování je `<meta charset="kódování">`
+    - teprve pokud není meta informace o kódování dostupná, provede se detekce jinak
+3) pokud detekované kódování není `utf-8` je nutné provést konverzi.
+
+Pokud jsem stránku načetl do proměnné `data`, pak lze použít transformaci:
+
+```Python
+text = data.decode("cp1250")
+utf8_data = text.encode("utf-8") 
+```
+
+Místo cp1250 se doplní detekované kódování. Našim cílovým kódováním je `utf-8`. Pokud v tomto kódování stránka již je neprovádíme další transformace.
+
+Ověř, že tato logika platí.
+
+### Fáze 3.6: zdroj idnes.cz
+
+V rámci naší implementace `scraper.py` zdroj *.idnes.cz má problém - nenečítá se totiž pro něj vše, co má. Tento zdroj je divný, protože obsah má rozdělený do dvou částí. První obsahuje první odstavec. CMS ji označuje jako popis a je přítomen v: `<div class="opener" itemprop="description">`. Druhá `<div itemprop="articleBody">` obsahuje samotný obsah článku.
+
+Do plného textu potřebujeme obě části. 
+
+V současnosti detekujeme pouze první (description) část. Druhá zůstává nedetekovaná.
+
+Uvažuji, jak nejlépe tento problém vyřešit. Různé zdroje mohou prezentovat data různým způsobem. V současné době uvažujeme několik obecných, na zdroji nezávislých, strategiích popisujících to, kde hledat obsah. Mám obavu, že toto nebude stačit a budeme muset implementovat některé strategie, které jsou závislé na zdroji.
+
+Těďka budeme implementovat strategii pro získání plného textu pro domény: `zpravy.iDNES.cz`, `www.zpravy.iDNES.cz` a `www.idnes.cz`. 
+
+Navrhuji načíst vše mezi tagy: 
+-  `<div class="opener" itemprop="description">` a jemu přináležející `</div>`
+-  `<div itemprop="articleBody">` a jemu přináležející `</div>`
+
+Článek z iDnes, o který se mimo jiné jedná je na: `https://www.idnes.cz/zpravy/domaci/tornado-hodoninsko-chmu-pocasi-boure.A210624_224841_domaci_vlc`.
+
+#### pokus o úpravu (evoluci generovaného kód)
+
+Webscraping implementace ve `scraper.py` pro domény `zpravy.iDNES.cz`, `www.zpravy.iDNES.cz` a `www.idnes.cz` se úplně nepovedla. Místo obsahu v `<div class="opener" itemprop="description">` a `<div itemprop="articleBody">`. Se vybral description z meta hlavičky a text pro paywall. Tedy nenačetla se žádná z požadovaných částí.
+
+Pro článek `https://www.idnes.cz/zpravy/domaci/tornado-hodoninsko-chmu-pocasi-boure.A210624_224841_domaci_vlc` je obsah předmětných tagů následující
+
+```html
+<div class="opener" itemprop="description">
+                        Tornádo, které zpustošilo sedm obcí na Hodonínsku, se mohlo prohnat prakticky kdekoli v Česku. Oblast není ničím specifická. „Vždy záleží na síle a typu bouře, ve které se jev objeví,“ říká ke čtvrtečním událostem meteoroložka Jitka Kučerová z brněnské pobočky Českého hydrometeorologického ústavu. To nejhorší už se podle ní přehnalo a bouřková činnost bude do rána po republice zvolna slábnout.
+                    </div>
+```
+
+```html
+<div itemprop="articleBody"><p><b>Nasvědčovalo něco tomu, že přijde tornádo?</b><br>Ne. Je určitá pravděpodobnost, že se při některých situacích může takovýto jev objevit, jenže jde jen o předpověď. My jako meteorologové nepředpovídáme, jestli bude tornádo nebo ne. Takto specifickými předpověďmi se zabývá například <a class="text-link" target="_blank" href="https://www.estofex.org/">ESTOFEX</a>, European Storm Forecast Experiment (<i>volně přeloženo jako Evropské experimentální předpovědi bouří, jedná se o volnočasový projekt evropských meteorologů a studentů meteorologie, pozn. red.</i>). Jsou to takoví nadšenci, kteří se zabývají předpověďmi bouřek a píší, jestli čekají to nebo ono. Ti naznačovali, že k něčemu takovému může potenciálně dojít. </p><!--ad--></div>
+```
+
+Výsledný text by měl být podobný 
+
+
+    Tornádo, které zpustošilo sedm obcí na Hodonínsku, se mohlo prohnat prakticky kdekoli v Česku. Oblast není ničím specifická. „Vždy záleží na síle a typu bouře, ve které se jev objeví,“ říká ke čtvrtečním událostem meteoroložka Jitka Kučerová z brněnské pobočky Českého hydrometeorologického ústavu. To nejhorší už se podle ní přehnalo a bouřková činnost bude do rána po republice zvolna slábnout.
+
+    Nasvědčovalo něco tomu, že přijde tornádo?
+    Ne. Je určitá pravděpodobnost, že se při některých situacích může takovýto jev objevit, jenže jde jen o předpověď. My jako meteorologové nepředpovídáme, jestli bude tornádo nebo ne. Takto specifickými předpověďmi se zabývá například ESTOFEX, European Storm Forecast Experiment (volně přeloženo jako Evropské experimentální předpovědi bouří, jedná se o volnočasový projekt evropských meteorologů a studentů meteorologie, pozn. red.). Jsou to takoví nadšenci, kteří se zabývají předpověďmi bouřek a píší, jestli čekají to nebo ono. Ti naznačovali, že k něčemu takovému může potenciálně dojít. 
+    
+#### Ověření spouštění kódu idnes
+
+Pracujeme na `scraper.py`. Momentálně řešíme specifika různých poskytovatelů obsahu. Naposledy jsme pracovali na poskytovateli idnes.cz, kde obsah článku byl  v `<div class="opener" itemprop="description">` a `<div itemprop="articleBody">`. Text se ale načítá chybně. Existuje několik možností proč tomu tak je. Potřebuji, aby jsme je začali vylučovat. Proto prosím ověř, že část určená pro vyhodnocování tohoto poskytovatele se skutečně pouští.
+
+Problémový je první zaznam v `data/Tornádo 2021_small.csv`.
