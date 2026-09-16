@@ -2,6 +2,8 @@
 
 """Parsing HTML – extrakce titulků a textového obsahu z HTML článků."""
 
+from builtins import print
+
 import bs4 as _bs4
 import re as _re
 
@@ -125,6 +127,11 @@ def extract_body_text(html_content):
         body_text = body.get_text(strip=True)
         # print(desc_text, body_text)  # DEBUG
         return f"{desc_text}\n\n{body_text}"
+
+    # kurzy.cz
+    if soup.select_one('meta[name="author"][content="Kurzy.cz"]'):
+        body = soup.select("#zprava")
+        return body[0].text
 
     # Odstranit scripty a style tagy
     for tag in list(soup.find_all(["script", "style"])):
