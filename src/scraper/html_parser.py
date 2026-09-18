@@ -83,7 +83,7 @@ def extract_body_text(html_content):
     if meta_tag:
         site_name = meta_tag.get("content")
 
-    if site_name == "iDNES.cz" or site_name == "Lidovky.cz":
+    if site_name == "iDNES.cz" or site_name == "Lidovky.cz" or site_name == "Expres.cz":
         desc = soup.select_one('div.opener[itemprop="description"]')
         body = soup.select_one('div[itemprop="articleBody"]')
         desc_text = desc.get_text(strip=True)

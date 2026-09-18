@@ -111,9 +111,10 @@ def nacit_artikl(url, timeout=30):
 
     # Cookie, která iDNES říká, že byl udělen souhlas
     cookies = {
-        # souhlas pro iDnes (obecně vydavatelství Marfa)
+        # souhlas pro iDnes, Expres.cz (obecně vydavatelství Marfa)
         "dCMP": "mafra=1111,all=1,reklama=1,part=0,cpex=1,google=1,gemius=1,id5=1,nase=1111,groupm=1,piano=1,seznam=1,geozo=0,czaid=1,click=1,vendors=full,verze=2,",
-        "adsCMP": "czaid=1,groupm=1,id5=1,gemius=1,seznam=1,cpex=1,piano=1,full=1,base=1,google=1,purposes=1,firstPurpose=1,publisher=1111",
+        #"adsCMP": "czaid=1,groupm=1,id5=1,gemius=1,seznam=1,cpex=1,piano=1,full=1,base=1,google=1,purposes=1,firstPurpose=1,publisher=1111",
+        "adsCMP": "czaid=1,groupm=1,id5=1,gemius=1,seznam=1,cpex=1,piano=1,full=1,base=1,google=1,purposes=1,firstPurpose=1,publisher=1111,aab=5",
 
         # 2. Souhlas pro Seznam / Didomi rozhraní (často vyžadováno na kurzy.cz)
         "FCCDCF": "%5Bnull%2Cnull%2Cnull%2C%5B%22CQqopgAQqopgAEsACBCSCwFoAP_gAEPgAATIMGgBBCFkASFBACBSAIoAQAAGx5BACEAAAABAAgAABAICIAwCAAAIAAQAFAAAAAAAkAAAIAAAAABAAECAAAAALAAAAEAQACAAJSAEAAEAACAAAEAAAgFAEQAAAAAAQgAAiAAgQAKAQYgCgAAEEAABACAAAACYIAAAASEAAAMAEAAAwkRQkQlAiAAAAgAAABAIAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIMGgBBCFkASFBACBSgIoAAAAWx5AACEAAAABAAgAABAICIAwCEAAAAEAAEAAAAAAAgAAAIAAAAABAAECAAAAALAAAAEAQACAAASAEAAEAACAAAEAAAgFAEQAAAAAAQAAAiQAgQAKAQQgCAAAAEAABACAAAACYIAABASEAAAMAEAAAwkRAkAlAiAAAAgAAABAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAA.IMGgBBCFkASFBACBSgIoAQAAWx5BACEAAAABAAgAABAICIAwCEAAIAEQAFAAAAAAAkAAAIAAAAABAAECAAAAALAAAAEAQACAAJSAEAAEAACAAAEAAAgFAEQAAAAAAQgAAiQAgQAKAQYgCgAAEEAABACAAAACYIAABASEAAAMAEAAAwkRQkQlAiAAAAgAAABAIAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIA.f_wAAAAAAAA%22%2C%222~442.494.817.1025.1029.1097.2072.2205.7131~dv.%22%2C%22FCB73613-2551-4DB0-8D3C-CBC4F4C8B681%22%5D%2Cnull%2Cnull%2C%5B%5B32%2C%22%5B%5C%22d5254f3f-cc58-492a-8efa-e8aaf301ed75%5C%22%2C%5B1789570549%2C506000000%5D%5D%22%5D%5D%5D",
@@ -132,7 +133,7 @@ def nacit_artikl(url, timeout=30):
             response = scraper.get(url)
         else:
             response = scraper.get(url, cookies=cookies)
-        # response = scraper.get(url, headers=headers, cookies=cookies)
+            # response = scraper.get(url, headers=headers, cookies=cookies)
         response.raise_for_status()
     except requests.RequestException as exc:
         print(f"⚠️ Chyba načítání {url}: {exc}")
