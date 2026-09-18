@@ -128,6 +128,11 @@ def extract_body_text(html_content):
         # print(desc_text, body_text)  # DEBUG
         return f"{desc_text}\n\n{body_text}"
 
+    if site_name == "Hospodářské noviny (HN.cz)":
+        body = soup.select_one('div.article-body-part.free-part')
+        body_text = body.get_text(strip=True)
+        return body_text
+
     # kurzy.cz
     if soup.select_one('meta[name="author"][content="Kurzy.cz"]'):
         body = soup.select("#zprava")
