@@ -12,6 +12,7 @@
 """Načítání plných textů článků z URL (Phase 3 – rate limiting)."""
 
 import configparser as _configparser
+import cloudscraper
 import datetime as _datetime
 import os
 import re
@@ -100,7 +101,11 @@ def nacit_artikl(url, timeout=30):
         return {}
 
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/140.0.0.0 Safari/537.36"
+        ),
         "Accept-Language": "cs-CZ,cs;q=0.9,en;q=0.8",
     }
 
@@ -115,13 +120,19 @@ def nacit_artikl(url, timeout=30):
         "FCNEC": "%5B%5B%22AKsRol_nN4j5V8GN372jPAVGpEArN0x4_aVjZ03nfTK74Ckh8aBf9vvAb1v96WMNGDjdTDZYLvzt6iCtguaaitGGH11muvwFJoKyRO-AXGTveHwTw4d0l5FrQZ8keKWmOQeEFf6Y2RALwpnDabwyZmUZs6apMU6iCw%3D%3D%22%5D%5D",
         "GAICA": "1692026165550b5Zp7j4Nv1K81QdYOiC2609"
 
+        # ct24 vyžaduje, aby se nepužily cookies (jinak vrátí 403)
     }
 
     response = None
     text = None
     title = None
     try:
-        response = requests.get(url, headers=headers, cookies=cookies)
+        scraper = cloudscraper.create_scraper()
+        if "ct24." in url:
+            response = scraper.get(url)
+        else:
+            response = scraper.get(url, cookies=cookies)
+        # response = scraper.get(url, headers=headers, cookies=cookies)
         response.raise_for_status()
     except requests.RequestException as exc:
         print(f"⚠️ Chyba načítání {url}: {exc}")
