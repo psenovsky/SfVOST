@@ -138,10 +138,27 @@ def extract_body_text(html_content):
         body_text = body.get_text(strip=True)
         return body_text
 
+    if site_name == "Ekolist.cz":
+        body = soup.select('p')
+        body_text = ""
+        for b in body:
+            body_text += f"{b.get_text(strip=True)}\n"
+
+        return body_text
     # kurzy.cz
     if soup.select_one('meta[name="author"][content="Kurzy.cz"]'):
         body = soup.select("#zprava")
         return body[0].text
+
+    # valasskemezirici.cz
+    link_tag = soup.select_one('link[rel="canonical"]')
+    if link_tag and link_tag.has_attr("href"):
+        url = link_tag["href"]
+        if "valasskemezirici" in url:
+            body = soup.select_one('div.editor.text-to-speech')
+            body_text = body.get_text(strip=True)
+            body_text = body_text.replace("\r\n", "")
+            return body_text
 
     # Odstranit scripty a style tagy
     for tag in list(soup.find_all(["script", "style"])):
