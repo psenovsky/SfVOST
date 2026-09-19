@@ -133,6 +133,11 @@ def extract_body_text(html_content):
         body_text = body.get_text(strip=True)
         return body_text
 
+    if site_name == "Lupa.cz":
+        body = soup.select_one('div.layout-article-content')
+        body_text = body.get_text(strip=True)
+        return body_text
+
     # kurzy.cz
     if soup.select_one('meta[name="author"][content="Kurzy.cz"]'):
         body = soup.select("#zprava")
