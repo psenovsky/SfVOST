@@ -146,7 +146,7 @@ def extract_body_text(html_content):
 
         return body_text
 
-    if site_name == "Radio Wave":
+    if site_name == "Radio Wave" or site_name == "Hradec Králové":
         desc = soup.select_one('div.field.field-perex')
         body = soup.select_one('div.field.body')
         desc_text = desc.get_text(strip=True)
@@ -158,6 +158,12 @@ def extract_body_text(html_content):
     if soup.select_one('meta[name="author"][content="Kurzy.cz"]'):
         body = soup.select("#zprava")
         return body[0].text
+
+    # refresher.cz
+    if soup.select_one('meta[name="author"][content="REFRESHER"]'):
+        body = soup.select_one('div.article__content-area')
+        body_text = body.get_text(strip=True)
+        return body_text
 
     # valasskemezirici.cz
     link_tag = soup.select_one('link[rel="canonical"]')
