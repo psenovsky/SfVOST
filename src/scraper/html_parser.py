@@ -154,6 +154,16 @@ def extract_body_text(html_content):
         # print(desc_text, body_text)  # DEBUG
         return f"{desc_text}\n\n{body_text}"
 
+    if site_name == "WHAT news - První lifestylové noviny":
+        body = soup.select_one('div.post-content.cf.entry-content.content-spacious')
+        body_text = body.get_text(strip=True)
+        return body_text
+
+    if site_name == "Viral Svět":
+        body = soup.select_one('div.entry-content')
+        body_text = body.get_text(strip=True)
+        return body_text
+
     # kurzy.cz
     if soup.select_one('meta[name="author"][content="Kurzy.cz"]'):
         body = soup.select("#zprava")
