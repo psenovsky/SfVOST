@@ -138,13 +138,22 @@ def extract_body_text(html_content):
         body_text = body.get_text(strip=True)
         return body_text
 
-    if site_name == "Ekolist.cz":
+    if site_name == "Ekolist.cz" or site_name == "Charita Česká republika":
         body = soup.select('p')
         body_text = ""
         for b in body:
             body_text += f"{b.get_text(strip=True)}\n"
 
         return body_text
+
+    if site_name == "Radio Wave":
+        desc = soup.select_one('div.field.field-perex')
+        body = soup.select_one('div.field.body')
+        desc_text = desc.get_text(strip=True)
+        body_text = body.get_text(strip=True)
+        # print(desc_text, body_text)  # DEBUG
+        return f"{desc_text}\n\n{body_text}"
+
     # kurzy.cz
     if soup.select_one('meta[name="author"][content="Kurzy.cz"]'):
         body = soup.select("#zprava")
