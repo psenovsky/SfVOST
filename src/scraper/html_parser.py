@@ -164,6 +164,11 @@ def extract_body_text(html_content):
         body_text = body.get_text(strip=True)
         return body_text
 
+    if site_name == "Ekonomický deník":
+        body = soup.select_one('div.prose.post-content')
+        body_text = body.get_text(strip=True)
+        return body_text
+
     # kurzy.cz
     if soup.select_one('meta[name="author"][content="Kurzy.cz"]'):
         body = soup.select("#zprava")
@@ -175,10 +180,11 @@ def extract_body_text(html_content):
         body_text = body.get_text(strip=True)
         return body_text
 
-    # valasskemezirici.cz
+    # ropoznávání podle toho, odkud bere CSS
     link_tag = soup.select_one('link[rel="canonical"]')
     if link_tag and link_tag.has_attr("href"):
         url = link_tag["href"]
+        # valasskemezirici.cz
         if "valasskemezirici" in url:
             body = soup.select_one('div.editor.text-to-speech')
             body_text = body.get_text(strip=True)
