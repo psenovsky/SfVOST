@@ -12,17 +12,17 @@
 """Načítání plných textů článků z URL (Phase 3 – rate limiting)."""
 
 import configparser as _configparser
-import cloudscraper
+# import cloudscraper
 import datetime as _datetime
 import os
 import re
 import requests
 import time
-import urllib.error
-import urllib.request
+# import urllib.error
+# import urllib.request
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse as _parse_url
-
+from curl_cffi import requests
 from src.detect_paywall import check_paywall
 from src.newton_one.data_io import nacti_csv, ulozit_jsonl
 
@@ -113,7 +113,6 @@ def nacit_artikl(url, timeout=30):
     cookies = {
         # souhlas pro iDnes, Expres.cz (obecně vydavatelství Marfa)
         "dCMP": "mafra=1111,all=1,reklama=1,part=0,cpex=1,google=1,gemius=1,id5=1,nase=1111,groupm=1,piano=1,seznam=1,geozo=0,czaid=1,click=1,vendors=full,verze=2,",
-        #"adsCMP": "czaid=1,groupm=1,id5=1,gemius=1,seznam=1,cpex=1,piano=1,full=1,base=1,google=1,purposes=1,firstPurpose=1,publisher=1111",
         "adsCMP": "czaid=1,groupm=1,id5=1,gemius=1,seznam=1,cpex=1,piano=1,full=1,base=1,google=1,purposes=1,firstPurpose=1,publisher=1111,aab=5",
 
         # 2. Souhlas pro Seznam / Didomi rozhraní (často vyžadováno na kurzy.cz)
@@ -128,14 +127,12 @@ def nacit_artikl(url, timeout=30):
     text = None
     title = None
     try:
-        scraper = cloudscraper.create_scraper()
         if "ct24." in url:
-            response = scraper.get(url)
+            response = requests.get(url)
         else:
-            response = scraper.get(url, cookies=cookies)
-            # response = scraper.get(url, headers=headers, cookies=cookies)
+            response = requests.get(url, cookies=cookies)
         response.raise_for_status()
-    except requests.RequestException as exc:
+    except requests.RequestsError as exc:
         print(f"⚠️ Chyba načítání {url}: {exc}")
         return {"text": "", "title": "", "paywall": "ne"}
 
@@ -256,7 +253,7 @@ def nacti_z_ukazku_csv(cesta_csv):
 
         # Přidat načtený text článku – pouze pokud byl řádek vyfiltrován k scrapování a úspěšně načeteno
         if raw_radek["Plné znění"] == "":
-            if raw_radek["Zdroj"] in ("czpravy.cz", "auto.tn.nova.cz", "tn.cz", "tnbiz.cz", "cssd.cz", "cz.sputniknews.com", "vrbnopp.cz", "belkovice-lastany.cz", "enviweb.cz", "firststyle.cz", "mesto-beroun.cz", "asocr.cz", "mediashow.cz"):
+            if raw_radek["Zdroj"] in ("czpravy.cz", "auto.tn.nova.cz", "tn.cz", "tnbiz.cz", "cssd.cz", "cz.sputniknews.com", "vrbnopp.cz", "belkovice-lastany.cz", "enviweb.cz", "firststyle.cz", "mesto-beroun.cz", "asocr.cz", "mediashow.cz", "praha16.eu", "energy-hub.cz"):
                 print(f"❌ {raw_radek['Zdroj']} není funkční, přeskakuji scrapování plného textu")
                 vysledek["Plné znění"] = ""
                 vysledek["Paywall"] = False

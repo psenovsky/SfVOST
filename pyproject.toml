@@ -21,4 +21,5 @@ dependencies = [
     "tqdm>=4.67.3",
     "transformers>=5.1.0",
     "beautifulsoup4>=4.15.0",
+    "curl-cffi>=0.16.3",
 ]
