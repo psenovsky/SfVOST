@@ -189,6 +189,20 @@ def extract_body_text(html_content):
         body_text = body.get_text(strip=True)
         return body_text
 
+    if site_name == "Aktuálně.cz - Víte, co se právě děje":
+        body = soup.select_one('div.article__content')
+        body_text = body.get_text(strip=True)
+        return body_text
+
+    # news-detail__content textpage
+    t = soup.find("meta", property="og:url")
+    if t:
+        url = t.get("content")
+        if "mo.gov.cz" in url:
+            body = soup.select_one('div.news-detail__content.textpage')
+            body_text = body.get_text(strip=True)
+            return body_text
+
     # kurzy.cz
     if soup.select_one('meta[name="author"][content="Kurzy.cz"]'):
         body = soup.select("#zprava")
