@@ -184,6 +184,11 @@ def extract_body_text(html_content):
         body_text = body.get_text(strip=True)
         return body_text
 
+    if site_name == "Globe24.cz":
+        body = soup.select_one('div.article-body__content.u-font-secondary')
+        body_text = body.get_text(strip=True)
+        return body_text
+
     # kurzy.cz
     if soup.select_one('meta[name="author"][content="Kurzy.cz"]'):
         body = soup.select("#zprava")
