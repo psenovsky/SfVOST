@@ -194,6 +194,15 @@ def extract_body_text(html_content):
         body_text = body.get_text(strip=True)
         return body_text
 
+    if site_name == "Život v Česku":
+        perex = soup.select_one('span.article-perex')
+        perex_text = perex.get_text(strip=True)
+        body = soup.select('p')
+        body_text = ""
+        for b in body:
+            body_text += f"{b.get_text(strip=True)}\n"
+        return f"{perex_text}\n\n{body_text}"
+
     # news-detail__content textpage
     t = soup.find("meta", property="og:url")
     if t:
