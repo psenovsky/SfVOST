@@ -208,6 +208,16 @@ def extract_body_text(html_content):
         body_text = body.get_text(strip=True)
         return body_text
 
+    if site_name == "hudebniknihovna.cz":
+        body = soup.select_one('div.contentNew')
+        body_text = body.get_text(strip=True)
+        return body_text
+
+    if site_name == "www.agroportal24h.cz":
+        body = soup.select_one('div.article-body')
+        body_text = body.get_text(strip=True)
+        return body_text
+
     # news-detail__content textpage
     t = soup.find("meta", property="og:url")
     if t:
@@ -220,6 +230,10 @@ def extract_body_text(html_content):
     # kurzy.cz
     if soup.select_one('meta[name="author"][content="Kurzy.cz"]'):
         body = soup.select("#zprava")
+        return body[0].text
+
+    if soup.select_one('meta[name="author"][content="CZDEFENCE"]'):
+        body = soup.select("#t")
         return body[0].text
 
     # refresher.cz
