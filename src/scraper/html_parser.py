@@ -203,6 +203,11 @@ def extract_body_text(html_content):
             body_text += f"{b.get_text(strip=True)}\n"
         return f"{perex_text}\n\n{body_text}"
 
+    if site_name == "Svět hospodářství":
+        body = soup.select_one('div.single__content')
+        body_text = body.get_text(strip=True)
+        return body_text
+
     # news-detail__content textpage
     t = soup.find("meta", property="og:url")
     if t:
@@ -232,6 +237,12 @@ def extract_body_text(html_content):
             body = soup.select_one('div.editor.text-to-speech')
             body_text = body.get_text(strip=True)
             body_text = body_text.replace("\r\n", "")
+            return body_text
+        if "ctidoma.cz" in url:
+            body = soup.select('p')
+            body_text = ""
+            for b in body:
+                body_text += f"{b.get_text(strip=True)}\n"
             return body_text
 
     # Odstranit scripty a style tagy
