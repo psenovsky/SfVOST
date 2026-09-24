@@ -251,18 +251,24 @@ def nacti_z_ukazku_csv(cesta_csv):
 
             vysledek[nazev] = hodnota
 
-        # Přidat načtený text článku – pouze pokud byl řádek vyfiltrován k scrapování a úspěšně načeteno
-        if raw_radek["Plné znění"] == "":
-            if raw_radek["Zdroj"] in ("czpravy.cz", "auto.tn.nova.cz", "tn.cz", "tnbiz.cz", "cssd.cz", "cz.sputniknews.com", "vrbnopp.cz", "belkovice-lastany.cz", "enviweb.cz", "firststyle.cz", "mesto-beroun.cz", "asocr.cz", "mediashow.cz", "praha16.eu", "energy-hub.cz", "irozhlas.cz", "halonoviny.cz", "aeronet.news", "ruik.cz", "euro.cz"):
-                print(f"❌ {raw_radek['Zdroj']} není funkční, přeskakuji scrapování plného textu")
-                vysledek["Plné znění"] = ""
-                vysledek["Paywall"] = False
+        # Scrapování probíhá pouze pro online zdroje. Zdroj, který není online,
+        # nelze scrapovat – řádek se do výstupu zkopíruje jako sledované sloupce
+        # (včetně případných prázdných hodnot) a Paywall se nastaví na 'ne'.
+        if raw_radek.get("Typ média") == "Online":
+            if raw_radek["Plné znění"] == "":
+                if raw_radek["Zdroj"] in ("czpravy.cz", "auto.tn.nova.cz", "tn.cz", "tnbiz.cz", "cssd.cz", "cz.sputniknews.com", "vrbnopp.cz", "belkovice-lastany.cz", "enviweb.cz", "firststyle.cz", "mesto-beroun.cz", "asocr.cz", "mediashow.cz", "praha16.eu", "energy-hub.cz", "irozhlas.cz", "halonoviny.cz", "aeronet.news", "ruik.cz", "euro.cz"):
+                    print(f"❌ {raw_radek['Zdroj']} není funkční, přeskakuji scrapování plného textu")
+                    vysledek["Plné znění"] = ""
+                    vysledek["Paywall"] = False
+                else:
+                    t = nacit_artikl(raw_radek["Originální internetový zdroj"])
+                    vysledek["Plné znění"] = t["text"]
+                    vysledek["Paywall"] = t["paywall"]
             else:
-                t = nacit_artikl(raw_radek["Originální internetový zdroj"])
-                vysledek["Plné znění"] = t["text"]
-                vysledek["Paywall"] = t["paywall"]
+                vysledek["Plné znění"] = raw_radek["Plné znění"]
+                vysledek["Paywall"] = "ne"
         else:
-            vysledek["Plné znění"] = raw_radek["Plné znění"]
+            print(f"⏭️ {raw_radek.get('Typ média')} – zdroj není online, přeskakuji scrapování plného textu")
             vysledek["Paywall"] = "ne"
 
         vysledky.append(vysledek)
