@@ -31,6 +31,7 @@ SLoupce = [
     {"nazev": "Typ zprávy",            "typ": str},
     {"nazev": "Sentiment",             "typ": str},
     {"nazev": "Dosah",                 "typ": int, "strip_space": True},
+    {"nazev": "Manuálně",              "typ": str},
 ]
 
 # Maximum retry count pro LLM API volání (Phase 5)
