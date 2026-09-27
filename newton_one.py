@@ -120,6 +120,9 @@ from src.newton_one.models import (
     UNICODE_WHITESPACE,
 )
 
+from src.newton_one.llm_analyzer import _analizovat_llm as _llm
+from src.newton_one.llm_analyzer import _ověřit_endpoint
+
 
 # Unicode znaky, které by mohly být mezernatami v číslech (např. U+00A0 nbsp, U+2007 thin space)
 
@@ -380,6 +383,18 @@ def main():
         exit(0)
 
     # =============================================================================
+    # Phase 5 – Ověření dostupnosti LLM endpointu JEDNORÁZ před zpracováním
+    # Pokud endpoint není dostupný, ukončíme s jednou jasnou zprávou místo
+    # per-řádkového špinění chyb a případného crashu (NameError po vyčerpání pokusů).
+    # =============================================================================
+    llm_dostupny = True
+    neuspesne_llm = 0
+    llm_ok, llm_msg = _ověřit_endpoint()
+    if not llm_ok:
+        print(f"❌ LLM analýza není k dispozici: {llm_msg}")
+        exit(1)
+
+    # =============================================================================
     # Phase 4 OPTIMIZACE: Inicializace modelů JEDNOU — ZAKOMENTOVÁNO pro testování LLM
     # Není potřeba šahat na HuggingFace, pokud nepoužíváme její modely.
     # =============================================================================
@@ -427,11 +442,22 @@ def main():
             vysledek["sentiment_LLM"] = llm_result.get("sentiment", "")
             vysledek["dezinformace_LLM"] = llm_result.get("dezinformace", "")
             vysledek["klíčová slova_LLM"] = llm_result.get("klíčová slova", "")
+            if not llm_result.get("ner") and not llm_result.get("sentiment"):
+                neuspesne_llm += 1
 
         vysledky.append(vysledek)
 
     # Zápis do JSONL
     ulozit_jsonl(vysledky, args.output)
+
+    # Výstupní shrnutí výsledku do konzole
+    print(f"\n✅ Hotovo: {len(vysledky)} řádků zpracováno → {args.output}")
+    if llm_dostupny:
+        print("   LLM analýza (NER_LLM / Sentiment_LLM / klíčová slova_LLM): OK")
+    else:
+        print(f"   ⚠️  LLM endpoint nedostupný – NER_LLM/Sentiment_LLM/klíčová slova_LLM prázdné")
+    if neuspesne_llm:
+        print(f"   ⚠️  {neuspesne_llm} řádků bez úspěšné LLM analýzy")
 
 
 if __name__ == "__main__":

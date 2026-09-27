@@ -15,6 +15,34 @@ def _clean_text(text):
     return "".join(ch for ch in text if ch not in UNICODE_WHITESPACE).strip()
 
 
+def _ověřit_endpoint():
+    """Jednorázová kontrola dostupnosti LLM endpointu před zpracováním dat.
+
+    Provádí lehké volání OpenAI-kompatibilního health-check bodu /v1/models.
+
+    Vrací
+    -----
+    tuple(bool, str)
+        (True, None) pokud je konfigurace platná a endpoint odpovídá na volání.
+        (False, msg) jinak spolu s popisem chyby.
+    """
+    cfg = _check_llm_config()
+    if not cfg["valid"]:
+        return False, cfg["message"]
+
+    try:
+        req = urllib.request.Request(
+            f"http://{cfg['host']}:{cfg['port']}/v1/models", method="GET",
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=30) as response:
+            response.read()
+    except Exception as exc:
+        return False, f"endpoint neodpověděl nebo selhal ({exc})"
+
+    return True, None
+
+
 def _analizovat_llm(text, zeme=""):
     """
     Provede NER a sentiment analýzu pomocí lokálního LLM v jednom HTTP volání.
