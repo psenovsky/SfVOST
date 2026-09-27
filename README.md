@@ -529,8 +529,18 @@ uv run newton_one.py -c <cesta_k_CSV> -o <cesta_k_JSONL>
 Parametry:
 
 - `-h`, `--help`  - zobrazí nápovědu a skončí
-- `-c`, `--csv`   - cesta k semicolon-delimited CSV souboru (povinné)
+- `-c`, `--csv`   - cesta k semicolon-delimited CSV souboru **nebo** JSONL (výstup scraperu) (povinné)
 - `-o`, `--output` - výstupní JSONL soubor (povinný)
+
+### Načtení z JSONL výstupu scraperu
+
+Kromě CSV souboru může skript jako vstup přijmout i **JSONL** — výstup scrapovací utility [`scraper.py`](./scraper.py). Scraper doplní do řádků plné znění článků (sloupec `Plné znění`) a hodnotu `Paywall`; takto obohacený JSONL lze přímo předat jako vstup do `newton_one.py` pro další analýzu (NER, sentiment, dezinformace).
+
+```bash
+uv run newton_one.py -c <cesta_k_JSONL> -o <cesta_k_JSONL_vystup>
+```
+
+Při načtení JSONL se záznamy považují za již přetvořená data (stejný formát jako výstup `pretvorit_radku`), proto se na ně neaplikují žádné další transformace — zachovají se tak doplněná pole (`Plné znění`, `Paywall`) i případné další analytické výsledky. K čtení JSONL slouží funkce [`nacti_jsonl()`](src/newton_one/data_io.py).
 
 Výstupní formát: každý řádek JSONL je jeden přetvořený příspěvek se sloupci: Kód článku, Datum publikování, Název, Zdroj, Země, Typ média, Anotace, Plné znění, URL článku, Typ zprávy, Sentiment, Dosah. Sloupce jsou v JSON uložené jako tab-delimited keys pro determinismus.
 
@@ -566,13 +576,15 @@ src/newton_one/
 ├── __init__.py         # export veřejného API
 ├── models.py           # konstanty (SLoupce, CSV_SEP, ENCODING... — zdroj pravdy)
 ├── utils.py            # helper funkce (parse_datum, strip_unicode_whitespace...)
-├── data_io.py          # nacti_csv(), pretvorit_radku(), ulozit_jsonl()
+├── data_io.py          # nacti_csv(), nacti_jsonl(), pretvorit_radku(), ulozit_jsonl()
 └── config_loader.py    # _MODEL_CACHE, _get_model, _check_llm_config
 ```
 
 ## scraper.py — Načítání plných textů článků z URL (Phase 3)
 
 Tento skript načte CSV soubor obsahující sloupec `URL článku` a pro každé platné URL načte plný text článku. Výsledek se uloží do JSONL formátu v souladu s výstupem `newton_one.py`. Plné znění je naplněno ze sloupce `Originální internetový zdroj`.
+
+Výstup scraperu (JSONL s doplněným `Plné znění` a `Paywall`) lze přímo použít jako vstup do [`newton_one.py`](./newton_one.py) — obě utility sdílejí stejný formát záznamu (`src/newton_one/models.py`).
 
 ```bash
 uv run scraper.py -c <cesta_k_CSV> -o <cesta_k_JSONL>
