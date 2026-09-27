@@ -109,6 +109,9 @@ def _analizovat_llm(text, zeme=""):
     # URL podle OpenAI kompatibilního schématu: http://{host}:{port}/v1/chat/completions
     url = f"http://{cfg['host']}:{cfg['port']}/v1/chat/completions"
 
+    # Inicializace výchozí hodnoty, aby po vyčerpání pokusů nedošlo k NameError
+    post = {}
+
     payload = {
         "model": cfg["model"],
         "messages": messages,
