@@ -22,6 +22,8 @@ Datum: 2026-08-14
 import argparse                                              # argumenty příkazového řádku
 import os                                                     # operace se systémem
 
+from tqdm import tqdm                                         # progress bar
+
 # Import analyzátorů malých modelů (Phase 3)
 from config_loader import ConfigLoader                        # čtení config.ini
 
@@ -392,8 +394,7 @@ def main():
     # Phase 3 – Analýza každého řádku (malé modely) — ZAKOMENTOVÁNO pro testování LLM
     # =============================================================================
     vysledky = []
-    total = len(radky)  # pro signalizaci průběhu LLM výzvy
-    for i, r in enumerate(radky):
+    for i, r in enumerate(tqdm(radky, desc="Zpracování řádků", unit="řádek")):
         if je_jsonl:
             vysledek = r  # JSONL záznamy jsou již přetvořené (výstup scraperu)
         else:
@@ -420,11 +421,6 @@ def main():
         # =============================================================================
         # Phase 5 – LLM analýza (sentiment_LLM, NER_LLM) – JEDNO volání na endpoint
         # =============================================================================
-        percent = (i + 1) / total * 100
-        filled = int(percent / 2)
-        bar = "█" * filled + "░" * (50 - filled)
-        print(f"\r{bar} {i+1}/{total} ({percent:.0f}%)\n", end="")
-
         if text_pro_analyzi:
             llm_result = _analizovat_ner_llm(text_pro_analyzi, zeme)
             vysledek["NER_LLM"] = llm_result.get("ner", {})
