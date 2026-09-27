@@ -132,6 +132,30 @@ def nacti_jsonl(cesta_jsonl):
     return radky
 
 
+def ulozit_radku_jsonl(radka, cesta_output):
+    """
+    Dopíše jeden záznam na konec JSONL souboru (průběžné ukládání).
+
+    Soubor se otevírá v append režimu, takže existující data nejsou přepsána.
+    Počítačový buffer je po zápisu vyprázdněn pro odolnost proti přerušení.
+
+    Parameters
+    ----------
+    radka : dict[str, str]
+        Přetvořený řádek (musí obsahovat identifikátor sloupce 'Kód článku').
+    cesta_output : str
+        Cesta k výstupnímu JSONL souboru.
+
+    Vrací
+    -----
+    None
+    """
+    json_str = json.dumps(radka, ensure_ascii=False, sort_keys=True)
+    with open(cesta_output, "a", encoding=JSONL_ENCODING) as f:
+        f.write(json_str + "\n")
+        f.flush()
+
+
 def ulozit_jsonl(radky, cesta_output):
     """
     Uloží řádky do JSONL souboru se sorted keys pro determinismus.

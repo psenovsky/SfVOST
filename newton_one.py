@@ -56,7 +56,14 @@ except ImportError as e:
 # Funkce – data I/O (Phase 1-2)
 # =============================================================================
 
-from src.newton_one.data_io import nacti_csv, nacti_jsonl, pretvorit_radku, ulozit_jsonl
+import json                                              # čtení/extrahování již zpracovaných záznamů
+
+from src.newton_one.data_io import (
+    nacti_csv,
+    nacti_jsonl,
+    pretvorit_radku,
+    ulozit_radku_jsonl,  # průběžné ukládání jednotlivých záznamů
+)
 
 
 # =============================================================================
@@ -383,6 +390,28 @@ def main():
         exit(0)
 
     # =============================================================================
+    # Průběžné ukládání + navázání (resume): zjistit již zpracované záznamy.
+    # Stav je jediným zdrojem pravdy – výstupní JSONL soubor. Přečteme si z něj
+    # identifikátory sloupce 'Kód článku' a při dalším spuštění přeskočíme řádky,
+    # které už byly úspěšně zpracovány (např. po výpadku proudu / přerušení).
+    # =============================================================================
+    zpracovane_kody = set()
+    if os.path.exists(args.output):
+        with open(args.output, "r", encoding=JSONL_ENCODING) as f:
+            for radek in f:
+                radek = radek.strip()
+                if not radek:
+                    continue
+                try:
+                    obj = json.loads(radek)
+                except json.JSONDecodeError:
+                    continue  # částečný poslední řádek po přerušení – ignorujeme
+                kod = obj.get("Kód článku", "") or obj.get("Kódčlánku", "")
+                if kod:
+                    zpracovane_kody.add(kod)
+    print(f"🔄 Navazuji na {len(zpracovane_kody)} již zpracovaných záznamů ({args.output})")
+
+    # =============================================================================
     # Phase 5 – Ověření dostupnosti LLM endpointu JEDNORÁZ před zpracováním
     # Pokud endpoint není dostupný, ukončíme s jednou jasnou zprávou místo
     # per-řádkového špinění chyb a případného crashu (NameError po vyčerpání pokusů).
@@ -408,12 +437,19 @@ def main():
     # =============================================================================
     # Phase 3 – Analýza každého řádku (malé modely) — ZAKOMENTOVÁNO pro testování LLM
     # =============================================================================
+    i_skocne = 0
     vysledky = []
-    for i, r in enumerate(tqdm(radky, desc="Zpracování řádků", unit="řádek")):
+    for i, r in enumerate(tqdm(radky, desc="Zpracování řádků", unit="řádek", total=len(radky))):
         if je_jsonl:
             vysledek = r  # JSONL záznamy jsou již přetvořené (výstup scraperu)
         else:
             vysledek = pretvorit_radku(r)
+
+        # Navázání: přeskočit řádky, které už byly úspěšně zpracovány a uloženy.
+        kod = vysledek.get("Kód článku", "") or vysledek.get("Kódčlánku", "")
+        if kod and kod in zpracovane_kody:
+            i_skocne += 1
+            continue
 
         # Text pro analýzu: priorita Plné znění > Anotace
         plne_znani = vysledek.get("Plné znění", "")
@@ -445,13 +481,13 @@ def main():
             if not llm_result.get("ner") and not llm_result.get("sentiment"):
                 neuspesne_llm += 1
 
-        vysledky.append(vysledek)
-
-    # Zápis do JSONL
-    ulozit_jsonl(vysledky, args.output)
+        # Průběžné ukládání – každý záznam se dopíše okamžitě po analýze,
+        # nikoliv až na konci. Při přerušení ztratíme jen právě tento řádek.
+        ulozit_radku_jsonl(vysledek, args.output)
 
     # Výstupní shrnutí výsledku do konzole
-    print(f"\n✅ Hotovo: {len(vysledky)} řádků zpracováno → {args.output}")
+    print(f"\n✅ Hotovo: {len(vysledky)} řádků zpracováno průběžně → {args.output}")
+    print(f"   🔄 Přeskočeno {i_skocne} již zpracovaných záznamů")
     if llm_dostupny:
         print("   LLM analýza (NER_LLM / Sentiment_LLM / klíčová slova_LLM): OK")
     else:
