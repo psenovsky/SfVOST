@@ -12,7 +12,7 @@ from src.newton_one.models import (
     UNICODE_WHITESPACE,
 )
 from src.newton_one.utils import parse_datum, strip_unicode_whitespace, progress_bar, parse_url
-from src.newton_one.data_io import nacti_csv, pretvorit_radku, ulozit_jsonl
+from src.newton_one.data_io import nacti_csv, nacti_jsonl, pretvorit_radku, ulozit_jsonl
 
 __all__ = [
     "CSV_SEP",
@@ -27,6 +27,7 @@ __all__ = [
     "progress_bar",
     "parse_url",
     "nacti_csv",
+    "nacti_jsonl",
     "pretvorit_radku",
     "ulozit_jsonl",
 ]

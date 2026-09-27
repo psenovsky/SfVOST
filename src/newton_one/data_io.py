@@ -3,6 +3,7 @@
 """Načtení CSV a zápis JSONL – data I/O pro newton_one."""
 
 import csv as _csv
+import json
 import os
 
 
@@ -91,6 +92,46 @@ def pretvorit_radku(radka):
     return vysledek
 
 
+def nacti_jsonl(cesta_jsonl):
+    """
+    Načte JSONL soubor (např. výstup scraperu) a vrací seznam slovníků.
+
+    Záznamy jsou považovány za již přetvořená data (stejný formát jako výstup
+    pretvorit_radku), proto se neaplikují žádné další transformace – vrátí se
+    tak přesně to, co bylo v souboru uloženo.
+
+    Parameters
+    ----------
+    cesta_jsonl : str
+        Cesta k vstupnímu JSONL souboru.
+
+    Vrací
+    -----
+    list[dict]
+        Seznam řádků z JSONL. Prázdný seznam, pokud soubor neexistuje nebo je prázdný.
+    """
+    if not os.path.exists(cesta_jsonl):
+        print(f"❌ Vstupní JSONL soubor neexistuje: {cesta_jsonl}")
+        return []
+
+    radky = []
+    with open(cesta_jsonl, "r", encoding=JSONL_ENCODING) as f:
+        for cislo_radky, radek in enumerate(f, start=1):
+            radek = radek.strip()
+            if not radek:
+                continue
+            try:
+                obj = json.loads(radek)
+            except json.JSONDecodeError as exc:
+                print(f"⚠️ Chyba při čtení řádku {cislo_radky} v souboru {cesta_jsonl}: {exc}")
+                continue
+            if isinstance(obj, dict):
+                radky.append(obj)
+
+    print(f"✅ Načteno {len(radky)} řádků z JSONL souboru {cesta_jsonl}")
+    return radky
+
+
 def ulozit_jsonl(radky, cesta_output):
     """
     Uloží řádky do JSONL souboru se sorted keys pro determinismus.
@@ -121,7 +162,7 @@ def ulozit_jsonl(radky, cesta_output):
     count = 0
     with open(cesta_output, "w", encoding=JSONL_ENCODING) as f:
         for radka in radky:
-            json_str = __import__("json").dumps(radka, ensure_ascii=False, sort_keys=True)
+            json_str = json.dumps(radka, ensure_ascii=False, sort_keys=True)
             f.write(json_str + "\n")
             count += 1
 

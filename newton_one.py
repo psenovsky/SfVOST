@@ -2,16 +2,17 @@
 
 """
 Název: newton_one.py
-Popis: CLI utilita pro načtení NewtonOne CSV souboru a konverzi do JSONL formátu pro následnou analýzu.
+Popis: CLI utilita pro načtení NewtonOne CSV souboru (nebo JSONL výstupu scraperu) a konverzi do JSONL formátu pro následnou analýzu.
 
 použití:
 --------
     python newton_one.py -c <cesta_k_CSV> -o <cesta_k_JSONL>
+    python newton_one.py -c <cesta_k_JSONL> -o <cesta_k_JSONL>
 
 Parametry:
 ----------
 - -h, --help  - zobrazí nápovědu a skončí
-- -c, --csv   - cesta k semicolon-delimited CSV souboru (povinné)
+- -c, --csv   - cesta k semicolon-delimited CSV souboru nebo JSONL (povinné)
 - -o, --output - výstupní JSONL soubor (povinný)
 
 Autor: Pavel Šenovský
@@ -53,7 +54,7 @@ except ImportError as e:
 # Funkce – data I/O (Phase 1-2)
 # =============================================================================
 
-from src.newton_one.data_io import nacti_csv, pretvorit_radku, ulozit_jsonl
+from src.newton_one.data_io import nacti_csv, nacti_jsonl, pretvorit_radku, ulozit_jsonl
 
 
 # =============================================================================
@@ -349,7 +350,7 @@ def main():
         prog='newton_one.py',
         description=description,
         formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument("-c", "--csv", help="cesta k semicolon-delimited CSV souboru")
+    parser.add_argument("-c", "--csv", help="cesta k semicolon-delimited CSV souboru nebo JSONL (výstup scraperu)")
     parser.add_argument("-o", "--output", help="výstupní JSONL soubor")
 
     args = parser.parse_args()
@@ -360,11 +361,18 @@ def main():
 
     # Kontrola existenci vstupního souboru
     if not os.path.exists(args.csv):
-        print(f"❌ Vstupní CSV soubor {args.csv} neexistuje.")
+        print(f"❌ Vstupní soubor {args.csv} neexistuje.")
         exit(1)
 
-    # Načtení dat
-    radky = nacti_csv(args.csv)
+    # Detekce formátu vstupu (CSV nebo JSONL). JSONL je výstup scraperu – již
+    # přetvořená data, proto se nepoužívá pretvorit_radku.
+    je_jsonl = args.csv.lower().endswith(".jsonl")
+
+    if je_jsonl:
+        radky = nacti_jsonl(args.csv)
+    else:
+        radky = nacti_csv(args.csv)
+
     if not radky:
         print("⚠️ Žádné řádky k zpracování.")
         exit(0)
@@ -386,7 +394,10 @@ def main():
     vysledky = []
     total = len(radky)  # pro signalizaci průběhu LLM výzvy
     for i, r in enumerate(radky):
-        vysledek = pretvorit_radku(r)
+        if je_jsonl:
+            vysledek = r  # JSONL záznamy jsou již přetvořené (výstup scraperu)
+        else:
+            vysledek = pretvorit_radku(r)
 
         # Text pro analýzu: priorita Plné znění > Anotace
         plne_znani = vysledek.get("Plné znění", "")

@@ -16,6 +16,6 @@ Although this file is written in English, the project itself is Czech, so all la
 
 ## The plan
 
-Dokončujeme práci na `scrapper.py`. Je potřeba udělat drobnou úpravu zohledňující změnu v datovém souboru `data/Tornádo 2021_spojené_small.csv`. V tomto souboru  přibyl nový sloupec `Manuálně`, který je potřeba exportovat také do výstupního jsonl souboru. Hodnotu je možno pouze převzít, není nutno ji upravovat.
+Dokončili jsme scrapovací nástroj `scraper.py`. Tento nástroj používáme pro doplnění některých chybějících informací v CSV souboru. Původně jsme CSV soubor (např. `data/Tornádo 2001_small.csv`) používali pro analýzu pomocí LLM ve skriptu `newton_one.py`. Scraper, ale produkuje jsonl formát. Potřebujeme upravit newton_one.py tak, aby bral i tento výstupní formát jako vstup. Bude potřeba upravit také výstupní formát jsonl ve newton_one.py, tak aby se použily nově přidaná pole.
 
 
