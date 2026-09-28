@@ -329,7 +329,9 @@ def _analizovat_llm(text, zeme=""):
     Vrací
     -----
     dict
-        {'ner': {...}, 'sentiment': '', 'text': '<odstřižený text>'}
+        {'ner': {...}, 'sentiment': '', 'text': '<odstřižený text>', 'ok': bool}
+        Klíč 'ok' (False při chybě, True při úspěšné analýze) slouží k počítání
+        řádků bez úspěšné LLM analýzy.
         Pokud je text prázdný, vrátí prázdný dict. Pokud endpoint není dostupný,
         vrátí chybovou zprávu s hodnotami na null/empty.
     """
@@ -478,7 +480,7 @@ def main():
             vysledek["sentiment_LLM"] = llm_result.get("sentiment", "")
             vysledek["dezinformace_LLM"] = llm_result.get("dezinformace", "")
             vysledek["klíčová slova_LLM"] = llm_result.get("klíčová slova", "")
-            if not llm_result.get("ner") and not llm_result.get("sentiment"):
+            if not llm_result.get("ok"):
                 neuspesne_llm += 1
 
         # Průběžné ukládání – každý záznam se dopíše okamžitě po analýze,
@@ -488,8 +490,10 @@ def main():
     # Výstupní shrnutí výsledku do konzole
     print(f"\n✅ Hotovo: {len(vysledky)} řádků zpracováno průběžně → {args.output}")
     print(f"   🔄 Přeskočeno {i_skocne} již zpracovaných záznamů")
-    if llm_dostupny:
+    if llm_dostupny and not neuspesne_llm:
         print("   LLM analýza (NER_LLM / Sentiment_LLM / klíčová slova_LLM): OK")
+    elif llm_dostupny:
+        print("   LLM analýza (NER_LLM / Sentiment_LLM / klíčová slova_LLM): částečně neúspěšná")
     else:
         print(f"   ⚠️  LLM endpoint nedostupný – NER_LLM/Sentiment_LLM/klíčová slova_LLM prázdné")
     if neuspesne_llm:

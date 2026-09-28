@@ -60,17 +60,20 @@ def _analizovat_llm(text, zeme=""):
     Vrací
     -----
     dict
-        {'ner': {...}, 'sentiment': '', 'text': '<odstřižený text>'}
+        {'ner': {...}, 'sentiment': '', 'text': '<odstřižený text>', 'ok': bool}
+        Klíč 'ok' vyjadřuje, zda proběhla skutečná úspěšná LLM analýza (True),
+        nebo zda byl vrácen jen stub při chybě / prázdném textu (False). Volající
+        jej používá k počítání řádků bez úspěšné LLM analýzy.
         Pokud je text prázdný, vrátí prázdný dict. Pokud endpoint není dostupný,
         vrátí chybovou zprávu s hodnotami na null/empty.
     """
     if not text:
-        return {"ner": {}, "sentiment": "", "text": ""}
+        return {"ner": {}, "sentiment": "", "text": "", "ok": False}
 
     cfg = _check_llm_config()
     if not cfg["valid"]:
         print(f"⚠️ NER_LLM/Sentiment_LLM: {cfg['message']}")
-        return {"ner": {}, "sentiment": "", "text": text[:2000]}
+        return {"ner": {}, "sentiment": "", "text": text[:2000], "ok": False}
 
     # Odstranit text nad maximální délku (LLM má limit)
     trunc_limit = 20000
@@ -139,6 +142,7 @@ def _analizovat_llm(text, zeme=""):
 
     # Inicializace výchozí hodnoty, aby po vyčerpání pokusů nedošlo k NameError
     post = {}
+    uspech = False
 
     payload = {
         "model": cfg["model"],
@@ -162,6 +166,7 @@ def _analizovat_llm(text, zeme=""):
 
                 výsledek = _json.loads(obsah)
             post = výsledek[0] if isinstance(výsledek, list) and len(výsledek) > 0 else {}
+            uspech = bool(post)
         except Exception as exc:
             print(f"⚠️ Chyba NER_LLM/Sentiment_LLM pro text: endpoint neodpověděl nebo selhal ({exc})")
             if pokus == MAX_LLM_RETRY - 1:
@@ -183,6 +188,7 @@ def _analizovat_llm(text, zeme=""):
         "sentiment": post.get("sentiment", "").lower(),
         "dezinformace": post.get("dezinformace", "").lower(),
         "klíčová slova": post.get("klíčová slova", []),
+        "ok": uspech,
     }
 
 
