@@ -72,38 +72,9 @@ from src.newton_one.data_io import (
 )
 
 
-# =============================================================================
-# Konfigurace LLM endpointu (Phase 5 – analýza pomocí lokálního LLM)
-# =============================================================================
+# Konfigurace LLM endpointu (Phase 5 – analýza pomocí lokálního LLM) se načítá
+# výhradně přes _check_llm_config z src/newton_one/config_loader.py – viz Plan 6 v AGENTS.md.
 
-_llm_config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.ini")
-
-
-def _check_llm_config():
-    """Vrátí dict s LLM konfigurací nebo chybovou zprávu."""
-    if not os.path.exists(_llm_config_path):
-        return {
-            "valid": False,
-            "message": f"❌ Konfigurační soubor {_llm_config_path} neexistuje",
-        }
-    _llm_config.read(_llm_config_path)
-    if "LLM" not in _llm_config:
-        return {
-            "valid": False,
-            "message": f"❌ V konfiguračním souboru chybí sekce [LLM]",
-        }
-    return {
-        "valid": True,
-        "host": _llm_config["LLM"]["host"],
-        "port": int(_llm_config["LLM"]["port"]),
-        "model": _llm_config["LLM"]["model"],
-        "temperature": float(_llm_config["LLM"]["temperature"]),
-        "max_tokens": int(_llm_config["LLM"]["max_tokens"]),
-    }
-
-
-# Maximum retry count pro LLM API volání (Phase 5)
-MAX_LLM_RETRY = 3
 
 # Konfigurace Phase 4 – optimalizace API volání
 try:
@@ -127,6 +98,7 @@ else:
 from src.newton_one.models import (
     CSV_SEP,
     ENCODING,
+    MAX_LLM_RETRY,
     OUTPUT_DELIMITER,
     SLoupce,
     UNICODE_WHITESPACE,
@@ -340,8 +312,6 @@ def _analizovat_llm(text, zeme=""):
         Pokud je text prázdný, vrátí prázdný dict. Pokud endpoint není dostupný,
         vrátí chybovou zprávu s hodnotami na null/empty.
     """
-    from src.newton_one.llm_analyzer import _analizovat_llm as _llm
-
     return _llm(text, zeme)
 
 
