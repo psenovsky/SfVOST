@@ -9,10 +9,72 @@ import urllib.request
 from src.newton_one.config_loader import _check_llm_config, MAX_LLM_RETRY
 from src.newton_one.models import UNICODE_WHITESPACE
 
+# Kategorie NER, které se vyhledávají v odpovědi LLM
+NER_KATEGORIE = ("PER", "ORG", "LOC", "GPE", "DATE", "FAC")
+
 
 def _clean_text(text):
     """Odstraní Unicode whitespace z textu."""
     return "".join(ch for ch in text if ch not in UNICODE_WHITESPACE).strip()
+
+
+def _prazdne_entity():
+    """Vrátí prázdnou strukturu NER (používá se jako stub při chybě nebo neúplné odpovědi)."""
+    return {klic: [] for klic in NER_KATEGORIE}
+
+
+def _seznam(hodnota):
+    """Vynutí hodnotu na seznam (LLM místo pole vrací i objekt, None nebo jediný řetězec)."""
+    if isinstance(hodnota, list):
+        return [polozka for polozka in hodnota if polozka is not None]
+    if isinstance(hodnota, str):
+        return [hodnota] if hodnota.strip() else []
+    return []
+
+
+def _text(hodnota, nazev):
+    """Vynutí hodnotu na řetězec s malými písmeny; cokoliv jiného než text → prázdný řetězec."""
+    if isinstance(hodnota, str):
+        return hodnota.lower()
+    if hodnota:
+        print(f"⚠️ {nazev}: LLM vrátilo neočekávaný typ ({type(hodnota).__name__}), použita prázdná hodnota")
+    return ""
+
+
+def _ma_uzitecnou_odpoved(post):
+    """Zjistí, zda odpověď LLM obsahuje alespoň sentiment, tedy zda je použitelná k uložení."""
+    sentiment = post.get("sentiment")
+    return bool(post) and isinstance(sentiment, str) and bool(sentiment.strip())
+
+
+def _normalizuj_vysledek(post):
+    """Převede odpověď LLM na typy, kterých očekává výstup i následná analýza v R.
+
+    Odpověď lokálního LLM je volný textový výstup, takže jednotlivé klíče mohou
+    chybět nebo mít neočekávaný typ (např. ``"ner": []`` místo objektu nebo
+    ``"sentiment": null``). Každá hodnota se proto zkontroluje a převede na
+    očekávaný typ; chybějící hodnota se nahradí prázdnou, ne aby skončila výjimkou.
+
+    Vrací
+    -----
+    tuple
+        (entities, sentiment, dezinformace, klicova_slova) jako (dict, str, str, list).
+    """
+    ner = post.get("ner")
+    if isinstance(ner, dict):
+        entities = {klic: _seznam(ner.get(klic)) for klic in NER_KATEGORIE}
+    else:
+        # None (klíč chybí / null) je běžné a není chyba, jiný typ už ano
+        if ner is not None:
+            print(f"⚠️ NER_LLM: LLM vrátilo neočekávaný typ klíče 'ner' ({type(ner).__name__}), použity prázdné entity")
+        entities = _prazdne_entity()
+
+    return (
+        entities,
+        _text(post.get("sentiment"), "Sentiment_LLM"),
+        _text(post.get("dezinformace"), "dezinformace_LLM"),
+        _seznam(post.get("klíčová slova")),
+    )
 
 
 def _ověřit_endpoint():
@@ -63,7 +125,10 @@ def _analizovat_llm(text, zeme=""):
         {'ner': {...}, 'sentiment': '', 'text': '<odstřižený text>', 'ok': bool}
         Klíč 'ok' vyjadřuje, zda proběhla skutečná úspěšná LLM analýza (True),
         nebo zda byl vrácen jen stub při chybě / prázdném textu (False). Volající
-        jej používá k počítání řádků bez úspěšné LLM analýzy.
+        jej používá k počítání řádků bez úspěšné LLM analýzy; odpověď bez sentimentu
+        se považuje za neúspěšnou, aby se řádek zpracoval znovu (viz Plan 2 v AGENTS.md).
+        Odpověď je vždy normalizována na očekávané typy (dict / str / list), takže
+        chybějící či neočekávaně typovaný klíč nesmí shodit běh – vrací se stub.
         Pokud je text prázdný, vrátí prázdný dict. Pokud endpoint není dostupný,
         vrátí chybovou zprávu s hodnotami na null/empty.
     """
@@ -165,8 +230,10 @@ def _analizovat_llm(text, zeme=""):
                     obsah = "\n".join(řádky[1:-1])
 
                 výsledek = _json.loads(obsah)
-            post = výsledek[0] if isinstance(výsledek, list) and len(výsledek) > 0 else {}
-            uspech = bool(post)
+            prvni = výsledek[0] if isinstance(výsledek, list) and len(výsledek) > 0 else None
+            # Odpověď musí být objekt; cokoliv jiného (None, string, číslo) = neúplná analýza
+            post = prvni if isinstance(prvni, dict) else {}
+            uspech = _ma_uzitecnou_odpoved(post)
         except Exception as exc:
             print(f"⚠️ Chyba NER_LLM/Sentiment_LLM pro text: endpoint neodpověděl nebo selhal ({exc})")
             if pokus == MAX_LLM_RETRY - 1:
@@ -177,22 +244,22 @@ def _analizovat_llm(text, zeme=""):
         if uspech:
             break
 
-    entities = {
-        "PER": post.get("ner", {}).get("PER", []),
-        "ORG": post.get("ner", {}).get("ORG", []),
-        "LOC": post.get("ner", {}).get("LOC", []),
-        "GPE": post.get("ner", {}).get("GPE", []),
-        "DATE": post.get("ner", {}).get("DATE", []),
-        "FAC": post.get("ner", {}).get("FAC", []),
-    }
+    # Normalizace běží ve vlastním try/except: rozbitá odpověď LLM nesmí shodit celý běh,
+    # ale má degradovat na stub (prázdné hodnoty + ok=False) jako ostatní chyby.
+    try:
+        entities, sentiment, dezinformace, klicova_slova = _normalizuj_vysledek(post)
+    except Exception as exc:
+        print(f"⚠️ Chyba NER_LLM/Sentiment_LLM: neočekávaný formát odpovědi LLM ({exc})")
+        entities, sentiment, dezinformace, klicova_slova = _prazdne_entity(), "", "", []
+        uspech = False
 
     return {
         "text": odstřiženy_text,
         "ner": entities,
-        "sentiment": post.get("sentiment", "").lower(),
-        "dezinformace": post.get("dezinformace", "").lower(),
-        "klíčová slova": post.get("klíčová slova", []),
-        "ok": uspech,
+        "sentiment": sentiment,
+        "dezinformace": dezinformace,
+        "klíčová slova": klicova_slova,
+        "ok": uspech and bool(sentiment),
     }
 
 
