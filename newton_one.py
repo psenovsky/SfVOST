@@ -60,6 +60,7 @@ except ImportError as e:
 # =============================================================================
 
 from src.newton_one.data_io import (
+    chybi_llm_analyza,                                 # záznam vyžaduje znovu LLM analýzu
     kod_radku,                                         # identifikátor záznamu
     nacti_csv,
     nacti_jsonl,
@@ -469,8 +470,8 @@ def main():
     # Pokud endpoint není dostupný, ukončíme s jednou jasnou zprávou místo
     # per-řádkového špinění chyb a případného crashu (NameError po vyčerpání pokusů).
     # =============================================================================
-    llm_dostupny = True
     neuspesne_llm = 0
+    uspesne_llm = 0
     llm_ok, llm_msg = _ověřit_endpoint()
     if not llm_ok:
         print(f"❌ LLM analýza není k dispozici: {llm_msg}")
@@ -492,7 +493,7 @@ def main():
     # =============================================================================
     i_skocne = 0
     znovu_zpracovano = 0
-    vysledky = []
+    zpracovano = 0
     for i, r in enumerate(tqdm(radky, desc="Zpracování řádků", unit="řádek", total=len(radky))):
         if je_jsonl:
             vysledek = r  # JSONL záznamy jsou již přetvořené (výstup scraperu)
@@ -530,28 +531,37 @@ def main():
             vysledek["sentiment_LLM"] = llm_result.get("sentiment", "")
             vysledek["dezinformace_LLM"] = llm_result.get("dezinformace", "")
             vysledek["klíčová slova_LLM"] = llm_result.get("klíčová slova", "")
-            if not llm_result.get("ok"):
+            if llm_result.get("ok"):
+                uspesne_llm += 1
+            else:
                 neuspesne_llm += 1
 
         # Průběžné ukládání – každý záznam se dopíše okamžitě po analýze,
         # nikoliv až na konci. Při přerušení ztratíme jen právě tento řádek.
         ulozit_radku_jsonl(vysledek, args.output)
+        zpracovano += 1
+
+        # Zápisem hotový kód přidáme mezi zpracované, aby se duplicitní kód ve vstupu
+        # znovu neanalyzoval ani nezapsal podruhé. Záznam, na kterém LLM selhala (nebo
+        # který nemá text), se mezi hotové nepočítá – musí se zpracovat znovu (Plan 2).
+        if kod and not chybi_llm_analyza(vysledek):
+            zpracovane_kody.add(kod)
         if kod and kod in chybi_llm_kody:
             znovu_zpracovano += 1
 
     # Výstupní shrnutí výsledku do konzole
-    print(f"\n✅ Hotovo: {len(vysledky)} řádků zpracováno průběžně → {args.output}")
+    analyzovano = uspesne_llm + neuspesne_llm
+    print(f"\n✅ Hotovo: {zpracovano} řádků zpracováno průběžně → {args.output}")
     print(f"   🔄 Přeskočeno {i_skocne} již zpracovaných záznamů")
     if znovu_zpracovano:
         print(f"   ♻️  Znovu zpracováno {znovu_zpracovano} záznamů, na kterých předtím selhala LLM analýza")
-    if llm_dostupny and not neuspesne_llm:
-        print("   LLM analýza (NER_LLM / Sentiment_LLM / klíčová slova_LLM): OK")
-    elif llm_dostupny:
-        print("   LLM analýza (NER_LLM / Sentiment_LLM / klíčová slova_LLM): částečně neúspěšná")
-    else:
-        print(f"   ⚠️  LLM endpoint nedostupný – NER_LLM/Sentiment_LLM/klíčová slova_LLM prázdné")
     if neuspesne_llm:
+        print(f"   ⚠️  LLM analýza (NER_LLM / Sentiment_LLM / klíčová slova_LLM): částečně neúspěšná "
+              f"({uspesne_llm} z {analyzovano} analyzovaných řádků)")
         print(f"   ⚠️  {neuspesne_llm} řádků bez úspěšné LLM analýzy")
+    else:
+        print(f"   ✅ LLM analýza (NER_LLM / Sentiment_LLM / klíčová slova_LLM): OK "
+              f"({analyzovano} analyzovaných řádků)")
 
 
 if __name__ == "__main__":
