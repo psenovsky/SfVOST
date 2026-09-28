@@ -173,6 +173,10 @@ def _analizovat_llm(text, zeme=""):
                 break
             continue
 
+        # Úspěšná odpověď = rovnou ukončit smyčku (opakovat se má jen neúspěch).
+        if uspech:
+            break
+
     entities = {
         "PER": post.get("ner", {}).get("PER", []),
         "ORG": post.get("ner", {}).get("ORG", []),
