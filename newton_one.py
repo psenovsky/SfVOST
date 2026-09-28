@@ -8,12 +8,15 @@ použití:
 --------
     python newton_one.py -c <cesta_k_CSV> -o <cesta_k_JSONL>
     python newton_one.py -c <cesta_k_JSONL> -o <cesta_k_JSONL>
+    python newton_one.py --opravit -o <cesta_k_JSONL>
 
 Parametry:
 ----------
-- -h, --help  - zobrazí nápovědu a skončí
-- -c, --csv   - cesta k semicolon-delimited CSV souboru nebo JSONL (povinné)
-- -o, --output - výstupní JSONL soubor (povinný)
+- -h, --help     - zobrazí nápovědu a skončí
+- -c, --csv      - cesta k semicolon-delimited CSV souboru nebo JSONL (povinné)
+- -o, --output   - výstupní JSONL soubor (povinné)
+- --opravit      - vyčistí výstupní JSONL (odstraní záznamy bez úspěšné LLM analýzy
+                   a duplicity) a skončí; vstupní CSV se v tomto režimu nenačítá
 
 Autor: Pavel Šenovský
 Datum: 2026-08-14
@@ -56,12 +59,14 @@ except ImportError as e:
 # Funkce – data I/O (Phase 1-2)
 # =============================================================================
 
-import json                                              # čtení/extrahování již zpracovaných záznamů
-
 from src.newton_one.data_io import (
+    kod_radku,                                         # identifikátor záznamu
     nacti_csv,
     nacti_jsonl,
+    opravit_vystup,                                    # vyčištění výstupu od neúspěšných LLM analýz
+    precteni_stav_vystupu,                             # stav výstupu pro navázání (resume)
     pretvorit_radku,
+    text_pro_analyzu,                                  # text k analýze (Plné znění > Anotace)
     ulozit_radku_jsonl,  # průběžné ukládání jednotlivých záznamů
 )
 
@@ -121,7 +126,6 @@ else:
 from src.newton_one.models import (
     CSV_SEP,
     ENCODING,
-    JSONL_ENCODING,
     OUTPUT_DELIMITER,
     SLoupce,
     UNICODE_WHITESPACE,
@@ -354,6 +358,42 @@ def _analizovat_sentiment_llm(text, zeme=""):
 # Hlavní funkce
 # =============================================================================
 
+def _vycistit_vystup(cesta_output):
+    """
+    Vyčistí výstupní JSONL a informuje o výsledku.
+
+    Odstraní záznamy, na kterých selhala LLM analýza (ty se znovu zpracují
+    při příštím běhu) a duplicitní záznamy. Původní soubor zůstane jako záloha
+    s příponou '.bak'.
+
+    Parameters
+    ----------
+    cesta_output : str
+        Cesta k výstupnímu JSONL souboru.
+
+    Vrací
+    -----
+    dict
+        Výsledek opravy (počty odstraněných záznamů a zapsaných řádků).
+    """
+    if not os.path.exists(cesta_output):
+        print(f"⚠️ Výstupní soubor {cesta_output} neexistuje – není co opravovat.")
+        return {"bez_llm": 0, "duplikaty": 0, "poskozeno": 0, "zapsano": 0}
+
+    vysledek = opravit_vystup(cesta_output)
+    if not (vysledek["bez_llm"] or vysledek["duplikaty"] or vysledek["poskozeno"]):
+        print(f"✅ Výstupní soubor {cesta_output} je čistý, není co opravovat ({vysledek['zapsano']} záznamů).")
+        return vysledek
+
+    print(f"🛠️  Opraven výstupní soubor {cesta_output} (záloha: {cesta_output}.bak):")
+    print(f"   odstraněno {vysledek['bez_llm']} záznamů bez úspěšné LLM analýzy")
+    print(f"   odstraněno {vysledek['duplikaty']} duplicitních záznamů")
+    if vysledek["poskozeno"]:
+        print(f"   odstraněno {vysledek['poskozeno']} nečitelných záznamů")
+    print(f"   zůstává {vysledek['zapsano']} záznamů – odstraněné záznamy se znovu zpracují při příštím běhu")
+    return vysledek
+
+
 def main():
     """Hlavní vstupní bod skriptu."""
     description = (
@@ -366,8 +406,23 @@ def main():
         formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("-c", "--csv", help="cesta k semicolon-delimited CSV souboru nebo JSONL (výstup scraperu)")
     parser.add_argument("-o", "--output", help="výstupní JSONL soubor")
+    parser.add_argument(
+        "--opravit",
+        action="store_true",
+        help="vyčistí výstupní JSONL (odstraní záznamy bez úspěšné LLM analýzy a duplicity) a skončí",
+    )
 
     args = parser.parse_args()
+
+    # =============================================================================
+    # Jednorázová oprava výstupního JSONL – bez čtení vstupních dat.
+    # =============================================================================
+    if args.opravit:
+        if not args.output:
+            print("❌ Pro opravu výstupu je nutné zadat cestu k výstupnímu JSONL souboru (-o).")
+            exit(1)
+        _vycistit_vystup(args.output)
+        return
 
     if not args.csv or not args.output:
         parser.print_help()
@@ -396,22 +451,18 @@ def main():
     # Stav je jediným zdrojem pravdy – výstupní JSONL soubor. Přečteme si z něj
     # identifikátory sloupce 'Kód článku' a při dalším spuštění přeskočíme řádky,
     # které už byly úspěšně zpracovány (např. po výpadku proudu / přerušení).
+    #
+    # Za zpracovaný se považuje jen záznam, na kterém skutečně proběhla LLM analýza.
+    # Záznamy, na kterých LLM selhala, se znovu zpracují – jinak by chybějící data
+    # zůstala chybět navždy. Nejprve je proto z výstupu vyřadíme, aby po opětovném
+    # zpracování nevznikly duplicity (záznam se průběžně doplňuje na konec souboru).
     # =============================================================================
-    zpracovane_kody = set()
-    if os.path.exists(args.output):
-        with open(args.output, "r", encoding=JSONL_ENCODING) as f:
-            for radek in f:
-                radek = radek.strip()
-                if not radek:
-                    continue
-                try:
-                    obj = json.loads(radek)
-                except json.JSONDecodeError:
-                    continue  # částečný poslední řádek po přerušení – ignorujeme
-                kod = obj.get("Kód článku", "") or obj.get("Kódčlánku", "")
-                if kod:
-                    zpracovane_kody.add(kod)
+    stav_vystupu = precteni_stav_vystupu(args.output)
+    zpracovane_kody = stav_vystupu["hotove_kody"]
+    chybi_llm_kody = stav_vystupu["chybi_llm_kody"]
     print(f"🔄 Navazuji na {len(zpracovane_kody)} již zpracovaných záznamů ({args.output})")
+    if chybi_llm_kody or stav_vystupu["duplikaty"] or stav_vystupu["poskozeno"]:
+        _vycistit_vystup(args.output)
 
     # =============================================================================
     # Phase 5 – Ověření dostupnosti LLM endpointu JEDNORÁZ před zpracováním
@@ -440,6 +491,7 @@ def main():
     # Phase 3 – Analýza každého řádku (malé modely) — ZAKOMENTOVÁNO pro testování LLM
     # =============================================================================
     i_skocne = 0
+    znovu_zpracovano = 0
     vysledky = []
     for i, r in enumerate(tqdm(radky, desc="Zpracování řádků", unit="řádek", total=len(radky))):
         if je_jsonl:
@@ -448,15 +500,13 @@ def main():
             vysledek = pretvorit_radku(r)
 
         # Navázání: přeskočit řádky, které už byly úspěšně zpracovány a uloženy.
-        kod = vysledek.get("Kód článku", "") or vysledek.get("Kódčlánku", "")
+        kod = kod_radku(vysledek)
         if kod and kod in zpracovane_kody:
             i_skocne += 1
             continue
 
         # Text pro analýzu: priorita Plné znění > Anotace
-        plne_znani = vysledek.get("Plné znění", "")
-        anotace = vysledek.get("Anotace", "").strip() if not plne_znani else ""
-        text_pro_analyzi = plne_znani or anotace
+        text_pro_analyzi = text_pro_analyzu(vysledek)
         zeme = vysledek.get("Země", "")
 
         # NER_SM (small model) — ZAKOMENTOVÁNO pro testování LLM Phase 5
@@ -486,10 +536,14 @@ def main():
         # Průběžné ukládání – každý záznam se dopíše okamžitě po analýze,
         # nikoliv až na konci. Při přerušení ztratíme jen právě tento řádek.
         ulozit_radku_jsonl(vysledek, args.output)
+        if kod and kod in chybi_llm_kody:
+            znovu_zpracovano += 1
 
     # Výstupní shrnutí výsledku do konzole
     print(f"\n✅ Hotovo: {len(vysledky)} řádků zpracováno průběžně → {args.output}")
     print(f"   🔄 Přeskočeno {i_skocne} již zpracovaných záznamů")
+    if znovu_zpracovano:
+        print(f"   ♻️  Znovu zpracováno {znovu_zpracovano} záznamů, na kterých předtím selhala LLM analýza")
     if llm_dostupny and not neuspesne_llm:
         print("   LLM analýza (NER_LLM / Sentiment_LLM / klíčová slova_LLM): OK")
     elif llm_dostupny:

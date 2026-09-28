@@ -5,6 +5,7 @@
 import csv as _csv
 import json
 import os
+import shutil
 
 
 from src.newton_one.models import (
@@ -130,6 +131,200 @@ def nacti_jsonl(cesta_jsonl):
 
     print(f"✅ Načteno {len(radky)} řádků z JSONL souboru {cesta_jsonl}")
     return radky
+
+
+def _retezec(hodnota):
+    """Bezpečně převede hodnotu na řetězec (None → prázdný řetězec)."""
+    if hodnota is None:
+        return ""
+    return hodnota if isinstance(hodnota, str) else str(hodnota)
+
+
+def kod_radku(radka):
+    """
+    Vrátí identifikátor záznamu.
+
+    Parameters
+    ----------
+    radka : dict
+        Jeden záznam (slovník načtený z CSV nebo JSONL).
+
+    Vrací
+    -----
+    str
+        Hodnota sloupce 'Kód článku' (případně 'Kódčlánku'), jinak prázdný řetězec.
+    """
+    return _retezec(radka.get("Kód článku")) or _retezec(radka.get("Kódčlánku"))
+
+
+def text_pro_analyzu(radka):
+    """
+    Vrátí text, který se posílá k LLM analýze: 'Plné znění', jinak 'Anotace'.
+
+    Parameters
+    ----------
+    radka : dict
+        Jeden záznam (slovník načtený z CSV nebo JSONL).
+
+    Vrací
+    -----
+    str
+        Text k analýze, prázdný řetězec pokud záznam žádný text neobsahuje.
+    """
+    plne_znani = _retezec(radka.get("Plné znění"))
+    if plne_znani:
+        return plne_znani
+    return _retezec(radka.get("Anotace")).strip()
+
+
+def chybi_llm_analyza(radka):
+    """
+    Rozhodne, zda záznam ve výstupním JSONL stále vyžaduje LLM analýzu.
+
+    Za hotový se považuje záznam s neprázdným 'sentiment_LLM' (LLM analýza
+    skutečně proběhla) i záznam bez jakéhokoli textu (analyzovat není co,
+    jinak by se znovu zpracoval při každém běhu). Záznam, který má text,
+    ale prázdné 'sentiment_LLM', je selhání LLM analýzy a musí se znovu
+    zpracovat.
+
+    Parameters
+    ----------
+    radka : dict
+        Jeden záznam z výstupního JSONL.
+
+    Vrací
+    -----
+    bool
+        True, pokud je nutné záznam znovu analyzovat.
+    """
+    return bool(text_pro_analyzu(radka)) and not _retezec(radka.get("sentiment_LLM")).strip()
+
+
+def precteni_stav_vystupu(cesta_output):
+    """
+    Načte stav výstupního JSONL pro navázání (resume) – soubor se nemění.
+
+    Parameters
+    ----------
+    cesta_output : str
+        Cesta k výstupnímu JSONL souboru.
+
+    Vrací
+    -----
+    dict
+        {'hotove_kody': set, 'chybi_llm_kody': set, 'duplikaty': int, 'poskozeno': int}
+        'hotove_kody' – kódy, které už nelze znovu zpracovat, 'chybi_llm_kody' – kódy
+        záznamů, na kterých selhala LLM analýza, 'duplikaty' – počet opakovaných kódů,
+        'poskozeno' – počet nečitelných řádků (částečný zápis po přerušení běhu).
+    """
+    stav = {"hotove_kody": set(), "chybi_llm_kody": set(), "duplikaty": 0, "poskozeno": 0}
+    if not os.path.exists(cesta_output):
+        return stav
+
+    videne_kody = set()
+    with open(cesta_output, "r", encoding=JSONL_ENCODING) as f:
+        for radek in f:
+            radek = radek.strip()
+            if not radek:
+                continue
+            try:
+                obj = json.loads(radek)
+            except json.JSONDecodeError:
+                stav["poskozeno"] += 1
+                continue  # částečně zapsaný řádek po přerušení – nečitelný
+            if not isinstance(obj, dict):
+                stav["poskozeno"] += 1
+                continue
+            kod = kod_radku(obj)
+            if kod and kod in videne_kody:
+                stav["duplikaty"] += 1
+            elif kod:
+                videne_kody.add(kod)
+            if chybi_llm_analyza(obj):
+                if kod:
+                    stav["chybi_llm_kody"].add(kod)
+            elif kod:
+                stav["hotove_kody"].add(kod)
+
+    return stav
+
+
+def opravit_vystup(cesta_output, zaloha=True):
+    """
+    Vyčistí výstupní JSONL – odstraní záznamy bez úspěšné LLM analýzy a duplicity.
+
+    Záznamy, na kterých selhala LLM analýza, se odstraní, aby po opravě nevznikly
+    duplicity – zpracovaný záznam se totiž průběžně doplní na konec souboru.
+    Záznamy bez textu zůstávají zachovány, protože analyzovat je není co.
+
+    Soubor se přepíše atomicky (dočasný soubor + os.replace) a před přepisem
+    se uloží záloha '<cesta_output>.bak'. Pokud není co opravovat, soubor
+    se vůbec nepřepisuje.
+
+    Parameters
+    ----------
+    cesta_output : str
+        Cesta k výstupnímu JSONL souboru.
+    zaloha : bool
+        Zda před přepisem vytvořit zálohu původního souboru.
+
+    Vrací
+    -----
+    dict
+        {'bez_llm': int, 'duplikaty': int, 'poskozeno': int, 'zapsano': int}
+    """
+    vysledek = {"bez_llm": 0, "duplikaty": 0, "poskozeno": 0, "zapsano": 0}
+    if not os.path.exists(cesta_output):
+        return vysledek
+
+    radky = []
+    zapsane_kody = set()
+    with open(cesta_output, "r", encoding=JSONL_ENCODING) as f:
+        for radek in f:
+            radek = radek.strip()
+            if not radek:
+                continue
+            try:
+                obj = json.loads(radek)
+            except json.JSONDecodeError:
+                vysledek["poskozeno"] += 1
+                continue
+            if not isinstance(obj, dict):
+                vysledek["poskozeno"] += 1
+                continue
+            if chybi_llm_analyza(obj):
+                vysledek["bez_llm"] += 1
+                continue
+            kod = kod_radku(obj)
+            if kod and kod in zapsane_kody:
+                vysledek["duplikaty"] += 1
+                continue
+            if kod:
+                zapsane_kody.add(kod)
+            radky.append(radek)
+            vysledek["zapsano"] += 1
+
+    if not (vysledek["bez_llm"] or vysledek["duplikaty"] or vysledek["poskozeno"]):
+        return vysledek  # soubor je čistý – zbytečně ho nepřepisujeme
+
+    if zaloha:
+        shutil.copy2(cesta_output, cesta_output + ".bak")
+
+    docasny = cesta_output + ".tmp"
+    try:
+        with open(docasny, "w", encoding=JSONL_ENCODING) as f:
+            for radek in radky:
+                f.write(radek + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(docasny, cesta_output)
+    except OSError as exc:
+        if os.path.exists(docasny):
+            os.remove(docasny)
+        print(f"❌ Výstupní soubor se nepodařilo opravit: {exc}")
+        raise
+
+    return vysledek
 
 
 def ulozit_radku_jsonl(radka, cesta_output):

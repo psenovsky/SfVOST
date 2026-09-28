@@ -531,6 +531,27 @@ Parametry:
 - `-h`, `--help`  - zobrazí nápovědu a skončí
 - `-c`, `--csv`   - cesta k semicolon-delimited CSV souboru **nebo** JSONL (výstup scraperu) (povinné)
 - `-o`, `--output` - výstupní JSONL soubor (povinný)
+- `--opravit`     - vyčistí výstupní JSONL a skončí (viz [Navázání po přerušení](#navázání-po-přerušení))
+
+### Navázání po přerušení
+
+Záznamy se ukládají průběžně, takže po přerušení běhu (výpadek proudu, pád počítače) se dá navázat
+přesně tam, kde běh skončil. Stav je jediným zdrojem pravdy — výstupní JSONL soubor. Při dalším
+spuštění se přeskočí jen ty záznamy, na kterých **skutečně proběhla LLM analýza** (tj. mají vyplněné
+`sentiment_LLM`). Záznamy, na kterých LLM selhala, se znovu zpracují.
+
+Protože se zpracovaný záznam průběžně doplňuje na konec souboru, musí se z výstupu nejprve odstranit,
+jinak by vznikly duplicity. Skript to udělá automaticky před samotným zpracováním: nečisté záznamy
+vyřadí, výstup přepíše atomicky a předem uloží zálohu `<výstup>.bak`. Stejnou opravu lze spustit
+samostatně nad libovolným JSONL:
+
+```bash
+uv run newton_one.py --opravit -o <cesta_k_JSONL>
+```
+
+Oprava odstraní záznamy bez úspěšné LLM analýzy, duplicitní záznamy a nečitelné řádky (částečný zápis
+po přerušení). Záznamy bez textu (`Plné znění` i `Anotace` prázdné) se ponechávají — analyzovat je není
+co, a proto se ani nezpracovávají znovu. Zbylé záznamy se doplní při příštím běhu.
 
 ### Načtení z JSONL výstupu scraperu
 
