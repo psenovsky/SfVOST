@@ -208,13 +208,14 @@ Příspěvky k analýze:
         Při selhání opakuje až MAX_RETRYkrát.
         """
         data_llm = json.dumps(payload).encode("utf-8")
+        timeout = int(self.config["LLM"].get("timeout", 300))
 
         for pokus in range(MAX_RETRY):
             try:
                 req = urllib.request.Request(
                     url, data=data_llm, headers={"Content-Type": "application/json"}
                 )
-                with urllib.request.urlopen(req, timeout=300) as response:
+                with urllib.request.urlopen(req, timeout=timeout) as response:
                     result = json.loads(response.read().decode())
                     obsah = result["choices"][0]["message"]["content"].strip()
 

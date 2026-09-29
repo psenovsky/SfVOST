@@ -46,6 +46,8 @@ def _check_llm_config():
         "model": _llm_config["LLM"]["model"],
         "temperature": float(_llm_config["LLM"]["temperature"]),
         "max_tokens": int(_llm_config["LLM"]["max_tokens"]),
+        "timeout": int(_llm_config["LLM"].get("timeout", 300)),
+        "health_check_timeout": int(_llm_config["LLM"].get("health_check_timeout", 30)),
     }
 
 

@@ -97,7 +97,7 @@ def _ověřit_endpoint():
             f"http://{cfg['host']}:{cfg['port']}/v1/models", method="GET",
             headers={"Content-Type": "application/json"}
         )
-        with urllib.request.urlopen(req, timeout=30) as response:
+        with urllib.request.urlopen(req, timeout=cfg["health_check_timeout"]) as response:
             response.read()
     except Exception as exc:
         return False, f"endpoint neodpověděl nebo selhal ({exc})"
@@ -227,7 +227,7 @@ def _analizovat_llm(text, zeme=""):
             req = urllib.request.Request(
                 url, data=_json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"}
             )
-            with urllib.request.urlopen(req, timeout=300) as response:
+            with urllib.request.urlopen(req, timeout=cfg["timeout"]) as response:
                 result = _json.loads(response.read().decode())
                 obsah = result["choices"][0]["message"]["content"].strip()
 

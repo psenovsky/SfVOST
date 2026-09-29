@@ -28,6 +28,7 @@ class ConfigForm(QWidget):
             "casove_limity": "Časové limity",
             "BlueSky": "BlueSky",
             "LLM": "LLM",
+            "newton_one": "NewtonOne",
             "ner": "NER (pojmenované entity)",
             "scraper": "Scraper",
         }
@@ -57,9 +58,15 @@ class ConfigForm(QWidget):
                 "host": "Hostitel",
                 "port": "Port",
                 "batch_size": "Velikost dávky",
+                "timeout": "Časový limit LLM volání (s)",
+                "health_check_timeout": "Časový limit health-checku (s)",
             },
             "ner": {
                 "modely": "Modely (JSON: jazyk → spaCy model)",
+            },
+            "newton_one": {
+                "batch_size": "Velikost dávky",
+                "cache_enabled": "Cache povolena",
             },
             "scraper": {
                 "delay": "Prodleva mezi články (s)",
