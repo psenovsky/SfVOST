@@ -14,8 +14,8 @@ for the cosial network posts.
 
 Although this file is written in English, the project itself is Czech, so all labels, error messages, etc. visible by the user must be written in Czech.
 
+## Technical notes
+
+we are using uv package manager, so use uv run ... in your experimation. If you need use temporary folder use `tmp` folder in project's folder.
+
 ## The plan
-
-Dokončili jsme scrapovací nástroj `scraper.py`. Tento nástroj používáme pro doplnění některých chybějících informací v CSV souboru. Původně jsme CSV soubor (např. `data/Tornádo 2001_small.csv`) používali pro analýzu pomocí LLM ve skriptu `newton_one.py`. Scraper, ale produkuje jsonl formát. Potřebujeme upravit newton_one.py tak, aby bral i tento výstupní formát jako vstup. Bude potřeba upravit také výstupní formát jsonl ve newton_one.py, tak aby se použily nově přidaná pole.
-
-

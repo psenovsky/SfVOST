@@ -193,6 +193,12 @@ def _analizovat_llm(text, zeme=""):
                   Nevracej prázdné seznamy, pokud jsou v textu zjevně přítomné relevantní entity..
 
                 2. Sentiment: Vyber právě jednu hodnotu: "pozitivní", "neutrální" nebo "negativní".
+                  - pamatuj, že analyzuje zprávy, které jsou relevantní pro krizové štáby, mohou se týkat povodní, tornád, velkých požárů apod., tedy jednoznačně negativních jevů.
+                  - zpráva, která takové jevy pouze popisuje tak, jak se staly, není sama o sobě negativní - je neutrální
+                  - pozitivní nebo negativní sentiment je možno odvodit, pouze pokud v textu se vyskytuje nějaký soud
+                  - příkladem pozitivního sentimentu by mohlo být vzedmutí vlny solidarity, pozitivní hodnocení činnosti zasahujících složek, apod.
+                  - příkladem negativního sentimentu by mohlo být pozdní reakce na událost, chybná metodika zásahu, apod.
+
                 3. Dezinformace: Vyhodnoť pravdivost na základě znepokojivého tónu, konspirací či obecných faktů. Vyber "ano" nebo "ne".
                 4. Klíčová slova: Identifikuj všechna klíčová slova charakterizující hodnocený příspěvek. Klíčových slov by nemělo být více než 10.
                 5. Výstup: Vrať výhradně čistý JSON bez jakýchkoliv komentářů nebo omáčky kolem."
