@@ -2,6 +2,9 @@
 config.ini
 !template/config.ini
 
+# HTML ourput od data analyses
+data/*.html
+
 #ignore python virtual environment
 .env*/
 .ropeproject/
