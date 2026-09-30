@@ -1,0 +1,229 @@
+---
+title: "newton_one"
+author: "Pavel Šenovský"
+date: "2026-09-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# analýza potřebných analytických balíků - chybějící doinstalovat
+packages <- c("dplyr", "jsonlite", "lubridate", "tibble", "tidyr", "purrr")
+install.packages(setdiff(packages, rownames(installed.packages())))
+
+library("dplyr")
+library("jsonlite")
+library("lubridate")
+library("tibble")
+library("tidyr")
+library("purrr")
+```
+
+## Import JSONL
+
+Následující blok načte data ze souboru `torando_spojene_Gemma4-12b.jsonl`
+(formát JSON Lines - jeden JSON objekt na řádek) a přidá sloupec `ID`
+s pořadovým číslem záznamu.
+
+```{r načtení dat}
+soubor <- "torando_spojene_Gemma4-12b.jsonl"
+
+zpravy <- stream_in(file(soubor), pagesize = 10000) %>%
+  mutate(ID = row_number())
+
+nrow(zpravy)
+```
+
+Sloupec `NER_LLM` přitom `jsonlite` nerozdělí - zůstává jeden sloupec,
+který je sám o sobě `data.frame` o rozměru `r nrow(zpravy$NER_LLM)` × `r ncol(zpravy$NER_LLM)`
+(vnitřní sloupce `r paste(names(zpravy$NER_LLM), collapse = ", ")`),
+kde každý sloupec obsahuje seznam nalezených entit daného typu.
+`klíčová slova_LLM` ponechá jako sloupec typu `list`.
+
+## Sjednocení typů a hodnot
+
+Zdrojová data slučují dva různé způsoby zápisu. Převážná většina záznamů
+pochází z automatické analýzy, tři záznamy jsou ručně zanasené
+(`Manuálně = "A"`, kód článku `tornádo2021_2`, `tornádo2021_3`, `tornádo2021_9`).
+Ty se liší formátem a mají prázdné hodnoty, proto je následujícími kroky
+sjednocujeme, aby šly dál agregovat.
+
+### Datum publikování
+
+Ručně zanacené záznamy mají datum ve formátu `25.6.2021`, automatické
+v ISO formátu `2021-06-25`. `parse_date_time` s nabídkou obou
+možností rozpozná oba formáty a převede je na skutečný typ `Date`.
+
+```{r sjednocení data}
+zpravy <- zpravy %>%
+  mutate(`Datum publikování` = as.Date(parse_date_time(
+    x = `Datum publikování`,
+    orders = c("Ymd", "dmy"),
+    trunc = 2
+  )))
+
+class(zpravy$`Datum publikování`)
+table(format(zpravy$`Datum publikování`, "%Y-%m-%d"), useNA = "ifany")
+```
+
+### Paywall
+
+`jsonlite` načte sloupec jako text, protože část hodnot není logická.
+Sjednotíme na logický typ, přičemž prázdné hodnoty a `"ne"` znamenají `FALSE`.
+Text i logickou hodnotu nejprve převedeme na text, aby šly porovnat.
+
+```{r sjednocení paywallu}
+zpravy <- zpravy %>%
+  mutate(Paywall = {
+    p <- tolower(trimws(as.character(Paywall)))
+    case_when(
+      p %in% c("true", "ano", "1", "yes")  ~ TRUE,
+      p %in% c("false", "ne", "0", "no")   ~ FALSE,
+      TRUE                                 ~ NA
+    )
+  })
+
+table(zpravy$Paywall, useNA = "ifany")
+```
+
+### Dosah
+
+U ručně zanacených záznamů je místo čísla prázdný řetězec. Převedeme na
+číselný typ a prázdné hodnoty nahradíme `NA`.
+
+```{r sjednocení dosahu}
+zpravy <- zpravy %>%
+  mutate(Dosah = as.numeric(ifelse(trimws(as.character(Dosah)) == "", NA,
+                                   as.character(Dosah))))
+
+summary(zpravy$Dosah)
+```
+
+### Prázdné hodnoty na NA
+
+Ručně zanacené záznamy mají v řadě sloupců prázdný řetězec místi skutečné
+hodnoty. Nahradíme je `NA`, aby se daly filtrovat a agregovat jednotně.
+
+```{r sjednocení prázdných hodnot}
+zpravy <- zpravy %>%
+  mutate(across(where(is.character),
+                ~ na_if(trimws(.x), "")))
+
+colSums(is.na(zpravy))
+```
+
+### Jednotné názvosloví sentimentu
+
+V datech jsou dva paralelní sloupce se sentimentem a každý používá jinou
+velikost písmen:
+
+- `Sentiment` - původní model, hodnoty `Neutrální`, `Negativní`, `Pozitivní`
+- `sentiment_LLM` - model Gemma4-12b, hodnoty `neutrální`, `negativní`, `pozitivní`
+
+Sjednotíme velikost písmen na malá a přejmenujeme na jednotné názvy bez diakritiky.
+
+```{r sjednocení sentimentu}
+zpravy <- zpravy %>%
+  mutate(
+    Sentiment = tolower(trimws(Sentiment)),
+    sentiment_LLM = tolower(trimws(sentiment_LLM)),
+    Sentiment = recode(Sentiment, "negativní" = "negativni",
+                                 "pozitivní" = "pozitivni",
+                                 "neutrální" = "neutralni"),
+    sentiment_LLM = recode(sentiment_LLM, "negativní" = "negativni",
+                                     "pozitivní" = "pozitivni",
+                                     "neutrální" = "neutralni")
+  )
+
+print(table(zpravy$Sentiment, useNA = "ifany"))
+print(table(zpravy$sentiment_LLM, useNA = "ifany"))
+```
+
+Sloupce `Sentiment` a `sentiment_LLM` se nyní dají přímo porovnávat.
+Původní zdrojová data zůstávají v nezměněném souboru.
+
+```{r porovnání obou sentimentů}
+table(Sentiment = zpravy$Sentiment, sentiment_LLM = zpravy$sentiment_LLM,
+      useNA = "ifany")
+```
+
+### Dezinformace
+
+Sloupec `dezinformace_LLM` používá hodnoty `ano` / `ne`, u ručně zanacených
+záznamů je prázdný. Sjednotíme na hodnoty `ano` / `ne` / `NA`.
+
+```{r sjednocení dezinformací}
+zpravy <- zpravy %>%
+  mutate(dezinformace_LLM = tolower(trimws(dezinformace_LLM)))
+
+table(zpravy$dezinformace_LLM, useNA = "ifany")
+```
+
+## Dataframe NER
+
+Sloupec `NER_LLM` je vnořený `data.frame` - má řádky odpovídající článkům
+a sloupce pojmenované podle typů entit, přičemž každý z nich obsahuje
+seznam nalezených hodnot. Pro další agregaci je potřeba ho převést
+do **dlouhého formátu**: jeden řádek = jedna entita jednoho článku,
+se sloupci `ID` (odkaz na článek v `zpravy`), `typ` a `entita`.
+
+```{r dlouhy NER}
+typy_ner <- c("DATE", "FAC", "GPE", "LOC", "ORG", "PER")
+
+ner <- tibble(ID = zpravy$ID) %>%
+  bind_cols(as_tibble(zpravy$NER_LLM)) %>%
+  pivot_longer(cols = all_of(typy_ner), names_to = "typ", values_to = "hodnoty") %>%
+  unnest(hodnoty) %>%
+  filter(!is.na(hodnoty), hodnoty != "") %>%
+  rename(entita = hodnoty)
+
+head(ner)
+```
+
+Převod probíhá ve čtyřech krocích: `bind_cols` vloží vnořený `data.frame`
+vedle `ID` jako široký rámec, `pivot_longer` ho otočí do dlouhého formátu
+a pojmenuje jednotlivé sloupce do `typ`, `unnest` rozbalí zbylé seznamy
+na jednotlivé řádky a `filter` odstraní prázdné výsledky (články,
+u kterých model daný typ entity nenašel).
+
+```{r kontrola NER}
+nrow(ner)
+count(ner, typ, sort = TRUE)
+n_distinct(ner$ID)
+```
+
+Dataframe `ner` obsahuje `r nrow(ner)` řádků, `r n_distinct(ner$entita)` různých
+názvů entity a pokrývá `r n_distinct(ner$ID)` z `r nrow(zpravy)` článků.
+Zbývajících `r nrow(zpravy) - n_distinct(ner$ID)` článků nemá žádnou
+dosaženou entitu - nejde o chybu převodu, ale o výstup modelu, který
+v těchto článcích nic nenašel (všechny mají prázdné `NER_LLM`):
+
+```{r clanky bez entit}
+zpravy %>%
+  filter(!ID %in% ner$ID) %>%
+  select(ID, `Kód článku`, Název, Zdroj)
+```
+
+Sloupec `ID` slouží jako cizí klíč do `zpravy`, takže se dá libovolně
+propojit s metadaty článku:
+
+```{r pripojeni metadat}
+ner %>%
+  left_join(zpravy %>% select(ID, Název, Zdroj, `Datum publikování`),
+            by = "ID") %>%
+  head()
+```
+
+## Výsledek
+
+`r nrow(zpravy)` záznamů, `r ncol(zpravy)` sloupců, z toho
+`r sum(zpravy$Manuálně == "A", na.rm = TRUE)` ručně zanacených.
+Zbývající sloupce jsou textové metadatum článků (`Název`, `Zdroj`,
+`Kód článku`, `Země`, ...) a seznam `klíčová slova_LLM` - klíčová slova
+je potřeba rozbalit do dlouhého formátu obdobně jako entity v dataframe
+`ner`.
+
+```{r přehled dat}
+glimpse(zpravy)
+```
