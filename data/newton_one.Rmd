@@ -9,7 +9,8 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 
 # analýza potřebných analytických balíků - chybějící doinstalovat
-packages <- c("dplyr", "jsonlite", "lubridate", "tibble", "tidyr", "purrr")
+# (první řádek pro dplyr v tomto dokumentu, zbytek pro třídu DataNewton)
+packages <- c("dplyr", "jsonlite", "lubridate", "tibble", "tidyr", "purrr", "R6")
 install.packages(setdiff(packages, rownames(installed.packages())))
 
 library("dplyr")
@@ -18,100 +19,101 @@ library("lubridate")
 library("tibble")
 library("tidyr")
 library("purrr")
+library("R6")
+
+# celý převod dat je zabalený v R6 třídě DataNewton, dokument ji už jen používá.
+# Kořen projektu hledáme od pracovního adresáře vzhůru (při překladu je pracovním
+# adresářem adresář tohoto Rmd), aby šel dokument přeložit odkudkoliv
+najdi_koren <- function(start) {
+  while (!file.exists(file.path(start, "src", "R", "data_newton.R"))) {
+    nadrazena <- dirname(start)
+    if (identical(nadrazena, start)) {
+      stop("Kořen projektu (složka src/R) se nepodařilo najít.", call. = FALSE)
+    }
+    start <- nadrazena
+  }
+  normalizePath(start)
+}
+
+KOREN <- najdi_koren(normalizePath(getwd()))
+
+source(file.path(KOREN, "src", "R", "data_newton.R"))
+
+soubor <- file.path(KOREN, "data", "torando_spojene_Gemma4-12b.jsonl")
+soubor_zdroju <- file.path(KOREN, "data", "zdroje.csv")
 ```
 
-## Import JSONL
+## Načtení dat
 
-Následující blok načte data ze souboru `torando_spojene_Gemma4-12b.jsonl`
-(formát JSON Lines - jeden JSON objekt na řádek) a přidá sloupec `ID`
-s pořadovým číslem záznamu.
+Veškeré načtení a převod dat je zabalený v R6 třídě `DataNewton`
+(`src/R/data_newton.R`), tento dokument ji už jen používá. Konstruktor načte
+soubor `torando_spojene_Gemma4-12b.jsonl` (formát JSON Lines - jeden JSON objekt
+na řádek), přidá sloupec `ID` s pořadovým číslem záznamu a provede všechny kroky
+převodu popsané níže. Zdrojová data se přitom nijak nemění, všechny úpravy
+vznikají až v paměti.
 
 ```{r načtení dat}
-soubor <- "torando_spojene_Gemma4-12b.jsonl"
+newton <- DataNewton$new(soubor)
 
-zpravy <- stream_in(file(soubor), pagesize = 10000) %>%
-  mutate(ID = row_number())
-
-nrow(zpravy)
+newton
 ```
 
-Sloupec `NER_LLM` přitom `jsonlite` nerozdělí - zůstává jeden sloupec,
-který je sám o sobě `data.frame` o rozměru `r nrow(zpravy$NER_LLM)` × `r ncol(zpravy$NER_LLM)`
-(vnitřní sloupce `r paste(names(zpravy$NER_LLM), collapse = ", ")`),
-kde každý sloupec obsahuje seznam nalezených entit daného typu.
-`klíčová slova_LLM` ponechá jako sloupec typu `list`.
+Instance `newton` nabízí čtyři tabulky:
+
+- `newton$zpravy` - zprávy s jednotnými typy hodnot,
+- `newton$ner` - entity nalezené modelem v dlouhém formátu,
+- `newton$klicova_slova` - klíčová slova nalezená modelem v dlouhém formátu,
+- `newton$zdroje` - číselník zdrojů.
+
+Kromě těchto tabulek má i pomocné metody: `prehled()` pro kontrolní výpis,
+`bez_entit()` a `s_metadaty()` pro práci s entitami a `ulozit_zdroje()` pro export.
+
+## Přehled dat
+
+Kontrolní výpis shrnuje celý dokument najednou - počty záznamů, prázdné hodnoty,
+rozložení sentimentu a dezinformací, kontrolu NER i klíčových slov a články
+bez nalezených entit.
+
+```{r přehled}
+newton$prehled()
+```
 
 ## Sjednocení typů a hodnot
 
 Zdrojová data slučují dva různé způsoby zápisu. Převážná většina záznamů
 pochází z automatické analýzy, tři záznamy jsou ručně zanasené
 (`Manuálně = "A"`, kód článku `tornádo2021_2`, `tornádo2021_3`, `tornádo2021_9`).
-Ty se liší formátem a mají prázdné hodnoty, proto je následujícími kroky
-sjednocujeme, aby šly dál agregovat.
+Ty se liší formátem a mají prázdné hodnoty, proto je třída sjednotí, aby šly
+dál agregovat. Každý krok má vlastní privátní metodu.
 
 ### Datum publikování
 
 Ručně zanacené záznamy mají datum ve formátu `25.6.2021`, automatické
-v ISO formátu `2021-06-25`. `parse_date_time` s nabídkou obou
-možností rozpozná oba formáty a převede je na skutečný typ `Date`.
-
-```{r sjednocení data}
-zpravy <- zpravy %>%
-  mutate(`Datum publikování` = as.Date(parse_date_time(
-    x = `Datum publikování`,
-    orders = c("Ymd", "dmy"),
-    trunc = 2
-  )))
-
-class(zpravy$`Datum publikování`)
-table(format(zpravy$`Datum publikování`, "%Y-%m-%d"), useNA = "ifany")
-```
+v ISO formátu `2021-06-25`. Metoda `sjednotit_datum()` rozpozná oba formáty
+a převede sloupec na skutečný typ `Date`. V tomto souboru jsou všechny záznamy
+z jednoho dne (`r unique(format(newton$zpravy[["Datum publikování"]], "%Y-%m-%d"))`),
+takže se převod projeví hlavně na změně typu sloupce.
 
 ### Paywall
 
 `jsonlite` načte sloupec jako text, protože část hodnot není logická.
-Sjednotíme na logický typ, přičemž prázdné hodnoty a `"ne"` znamenají `FALSE`.
-Text i logickou hodnotu nejprve převedeme na text, aby šly porovnat.
-
-```{r sjednocení paywallu}
-zpravy <- zpravy %>%
-  mutate(Paywall = {
-    p <- tolower(trimws(as.character(Paywall)))
-    case_when(
-      p %in% c("true", "ano", "1", "yes")  ~ TRUE,
-      p %in% c("false", "ne", "0", "no")   ~ FALSE,
-      TRUE                                 ~ NA
-    )
-  })
-
-table(zpravy$Paywall, useNA = "ifany")
-```
+Metoda `sjednotit_paywall()` sjednotí sloupec na logický typ, přičemž prázdné
+hodnoty a `"ne"` znamenají `FALSE`. Za paywallem je `r sum(newton$zpravy$Paywall, na.rm = TRUE)`
+z `r nrow(newton$zpravy)` článků.
 
 ### Dosah
 
-U ručně zanacených záznamů je místo čísla prázdný řetězec. Převedeme na
-číselný typ a prázdné hodnoty nahradíme `NA`.
-
-```{r sjednocení dosahu}
-zpravy <- zpravy %>%
-  mutate(Dosah = as.numeric(ifelse(trimws(as.character(Dosah)) == "", NA,
-                                   as.character(Dosah))))
-
-summary(zpravy$Dosah)
-```
+U ručně zanacených záznamů je místo čísla prázdný řetězec. Metoda
+`sjednotit_dosah()` převede sloupec na číselný typ a prázdné hodnoty nahradí `NA`
+(u `r sum(is.na(newton$zpravy$Dosah))` záznamů).
 
 ### Prázdné hodnoty na NA
 
 Ručně zanacené záznamy mají v řadě sloupců prázdný řetězec místi skutečné
-hodnoty. Nahradíme je `NA`, aby se daly filtrovat a agregovat jednotně.
-
-```{r sjednocení prázdných hodnot}
-zpravy <- zpravy %>%
-  mutate(across(where(is.character),
-                ~ na_if(trimws(.x), "")))
-
-colSums(is.na(zpravy))
-```
+hodnoty. Metoda `nahradit_prazdne()` je nahradí `NA`, aby se daly filtrovat
+a agregovat jednotně. Počty `NA` v jednotlivých sloupcích jsou v části
+*Prázdné hodnoty (NA)* kontrolního výpisu výše; sloupce `NER_LLM`
+a `klíčová slova_LLM` se nepočítají, protože obsahují vnořené hodnoty.
 
 ### Jednotné názvosloví sentimentu
 
@@ -121,71 +123,59 @@ velikost písmen:
 - `Sentiment` - původní model, hodnoty `Neutrální`, `Negativní`, `Pozitivní`
 - `sentiment_LLM` - model Gemma4-12b, hodnoty `neutrální`, `negativní`, `pozitivní`
 
-Sjednotíme velikost písmen na malá a přejmenujeme na jednotné názvy bez diakritiky.
-
-```{r sjednocení sentimentu}
-zpravy <- zpravy %>%
-  mutate(
-    Sentiment = tolower(trimws(Sentiment)),
-    sentiment_LLM = tolower(trimws(sentiment_LLM)),
-    Sentiment = recode(Sentiment, "negativní" = "negativni",
-                                 "pozitivní" = "pozitivni",
-                                 "neutrální" = "neutralni"),
-    sentiment_LLM = recode(sentiment_LLM, "negativní" = "negativni",
-                                     "pozitivní" = "pozitivni",
-                                     "neutrální" = "neutralni")
-  )
-
-print(table(zpravy$Sentiment, useNA = "ifany"))
-print(table(zpravy$sentiment_LLM, useNA = "ifany"))
-```
-
-Sloupce `Sentiment` a `sentiment_LLM` se nyní dají přímo porovnávat.
-Původní zdrojová data zůstávají v nezměněném souboru.
+Metoda `sjednotit_sentiment()` sjednotí velikost písmen na malá a přejmenuje
+hodnoty na jednotné názvy bez diakritiky. Sloupce se pak dají přímo porovnávat.
 
 ```{r porovnání obou sentimentů}
-table(Sentiment = zpravy$Sentiment, sentiment_LLM = zpravy$sentiment_LLM,
-      useNA = "ifany")
+shoda <- table(Sentiment = newton$zpravy$Sentiment,
+               sentiment_LLM = newton$zpravy$sentiment_LLM,
+               useNA = "ifany")
+
+shoda
+
+# shoda obou modelů na záznamech, které mají sentiment vyplněný u obou
+vyplnene <- !is.na(newton$zpravy$Sentiment) & !is.na(newton$zpravy$sentiment_LLM)
+stejne <- vyplnene & newton$zpravy$Sentiment == newton$zpravy$sentiment_LLM
+
+sprintf("Oba modely se shodují u %.1f %% záznamů (%d z %d).",
+        100 * mean(stejne), sum(stejne), sum(vyplnene))
 ```
+
+Shoda je tedy jen částečná. Největší rozdíly vznikají u záznamů označených
+původním modelem jako `neutralni` - u většiny z nich LLM určil konkrétnější
+sentiment (`negativni` nebo `pozitivni`). Sloupce se dají přímo porovnávat,
+pro výpočty je ale vhodné zvolit jeden z nich a nezaměňovat je.
 
 ### Dezinformace
 
 Sloupec `dezinformace_LLM` používá hodnoty `ano` / `ne`, u ručně zanacených
-záznamů je prázdný. Sjednotíme na hodnoty `ano` / `ne` / `NA`.
-
-```{r sjednocení dezinformací}
-zpravy <- zpravy %>%
-  mutate(dezinformace_LLM = tolower(trimws(dezinformace_LLM)))
-
-table(zpravy$dezinformace_LLM, useNA = "ifany")
-```
+záznamů je prázdný. Metoda `sjednotit_dezinformace()` sjednotí hodnoty na malá
+písmena, tedy na `ano` / `ne` / `NA`. Model označil jako dezinformační
+`r sum(newton$zpravy$dezinformace_LLM == "ano", na.rm = TRUE)` záznamů.
 
 ## Dataframe NER
 
-Sloupec `NER_LLM` je vnořený `data.frame` - má řádky odpovídající článkům
-a sloupce pojmenované podle typů entit, přičemž každý z nich obsahuje
-seznam nalezených hodnot. Pro další agregaci je potřeba ho převést
-do **dlouhého formátu**: jeden řádek = jedna entita jednoho článku,
-se sloupci `ID` (odkaz na článek v `zpravy`), `typ` a `entita`.
+Sloupec `NER_LLM` `jsonlite` nerozdělí - zůstává jeden sloupec,
+který je sám o sobě `data.frame` o rozměru `r nrow(newton$zpravy$NER_LLM)` × `r ncol(newton$zpravy$NER_LLM)`
+(vnitřní sloupce `r paste(names(newton$zpravy$NER_LLM), collapse = ", ")`),
+kde každý sloupec obsahuje seznam nalezených entit daného typu.
+`klíčová slova_LLM` ponechá jako sloupec typu `list`.
+
+Pro další agregaci je potřeba oba převést do **dlouhého formátu**. Metoda
+`prevest_ner()` dělá převod v čtyřech krocích: `bind_cols` vloží vnořený
+`data.frame` vedle `ID` jako široký rámec, `pivot_longer` ho otočí do dlouhého
+formátu a pojmenuje jednotlivé sloupce do `typ`, `unnest` rozbalí zbylé seznamy
+na jednotlivé řádky a `filter` odstraní prázdné výsledky (články, u kterých
+model daný typ entity nenašel).
 
 ```{r dlouhy NER}
-typy_ner <- c("DATE", "FAC", "GPE", "LOC", "ORG", "PER")
-
-ner <- tibble(ID = zpravy$ID) %>%
-  bind_cols(as_tibble(zpravy$NER_LLM)) %>%
-  pivot_longer(cols = all_of(typy_ner), names_to = "typ", values_to = "hodnoty") %>%
-  unnest(hodnoty) %>%
-  filter(!is.na(hodnoty), hodnoty != "") %>%
-  rename(entita = hodnoty)
+ner <- newton$ner
 
 head(ner)
 ```
 
-Převod probíhá ve čtyřech krocích: `bind_cols` vloží vnořený `data.frame`
-vedle `ID` jako široký rámec, `pivot_longer` ho otočí do dlouhého formátu
-a pojmenuje jednotlivé sloupce do `typ`, `unnest` rozbalí zbylé seznamy
-na jednotlivé řádky a `filter` odstraní prázdné výsledky (články,
-u kterých model daný typ entity nenašel).
+Výsledek má jeden řádek = jedna entita jednoho článku, se sloupci `ID` (odkaz
+na článek v `newton$zpravy`), `typ` a `entita`.
 
 ```{r kontrola NER}
 nrow(ner)
@@ -194,40 +184,36 @@ n_distinct(ner$ID)
 ```
 
 Dataframe `ner` obsahuje `r nrow(ner)` řádků, `r n_distinct(ner$entita)` různých
-názvů entity a pokrývá `r n_distinct(ner$ID)` z `r nrow(zpravy)` článků.
-Zbývajících `r nrow(zpravy) - n_distinct(ner$ID)` článků nemá žádnou
+názvů entity a pokrývá `r n_distinct(ner$ID)` z `r nrow(newton$zpravy)` článků.
+Nejčastěji model nachází geopolitická místa (`GPE`) a organizace (`ORG`).
+
+Zbývajících `r nrow(newton$zpravy) - n_distinct(ner$ID)` článků nemá žádnou
 dosaženou entitu - nejde o chybu převodu, ale o výstup modelu, který
-v těchto článcích nic nenašel (všechny mají prázdné `NER_LLM`):
+v těchto článcích nic nenašel (všechny mají prázdné `NER_LLM`). Metoda
+`bez_entit()` je vrací:
 
 ```{r clanky bez entit}
-zpravy %>%
-  filter(!ID %in% ner$ID) %>%
-  select(ID, `Kód článku`, Název, Zdroj)
+newton$bez_entit()
 ```
 
-Sloupec `ID` slouží jako cizí klíč do `zpravy`, takže se dá libovolně
-propojit s metadaty článku:
+Sloupec `ID` slouží jako cizí klíč do `newton$zpravy`, takže se dá libovolně
+propojit s metadaty článku. Metoda `s_metadaty()` to dělá za nás
+(Název, Zdroj, Datum publikování):
 
 ```{r pripojeni metadat}
-ner %>%
-  left_join(zpravy %>% select(ID, Název, Zdroj, `Datum publikování`),
-            by = "ID") %>%
-  head()
+head(newton$s_metadaty())
 ```
 
 ## Dataframe klíčových slov
 
 Sloupec `klíčová slova_LLM` je na rozdíl od `NER_LLM` jen sloupec typu `list`,
-kde každý prvek obsahuje textový vektor nalezených klíčových slov. Stačí ho
-rozbalit na jednotlivé řádky - jeden řádek = jedno klíčové slovo jednoho
-článku, se sloupci `ID` (odkaz na článek v `zpravy`) a `klicove_slovo`.
+kde každý prvek obsahuje textový vektor nalezených klíčových slov.
+Metoda `prevest_klicova_slova()` ho rozbalí na jednotlivé řádky - jeden řádek
+= jedno klíčové slovo jednoho článku - a hned vedle původního zápisu přidá
+normalizovaný sloupec `klicove_slovo_norm` s malými písmeny.
 
 ```{r dlouha klicova slova}
-klicova_slova <- zpravy %>%
-  select(ID, `klíčová slova_LLM`) %>%
-  unnest(`klíčová slova_LLM`, keep_empty = FALSE) %>%
-  rename(klicove_slovo = `klíčová slova_LLM`) %>%
-  filter(!is.na(klicove_slovo), klicove_slovo != "")
+klicova_slova <- newton$klicova_slova
 
 head(klicova_slova)
 ```
@@ -240,8 +226,8 @@ n_distinct(klicova_slova$ID)
 
 Dataframe `klicova_slova` obsahuje `r nrow(klicova_slova)` výskytů
 `r n_distinct(klicova_slova$klicove_slovo)` různých klíčových slov
-v `r n_distinct(klicova_slova$ID)` z `r nrow(zpravy)` článků.
-Jediný článek bez klíčových slov je ID `r setdiff(zpravy$ID, klicova_slova$ID)`,
+v `r n_distinct(klicova_slova$ID)` z `r nrow(newton$zpravy)` článků.
+Jediný článek bez klíčových slov je ID `r setdiff(newton$zpravy$ID, klicova_slova$ID)`,
 který zároveň nemá ani nalezené entity - jde o živý přenos
 z e15.cz bez analyzovaného textu.
 
@@ -253,44 +239,39 @@ head(count(klicova_slova, klicove_slovo, sort = TRUE), 15)
 
 Na rozdíl od sloupců se sentimentem zde **velikost písmen nese význam** -
 model psal vlastní jména s velkým písmenem (`Morava`, `Česká republika`)
-a obecná slova malým (`tornádo`, `pomoc`). Ponechali jsme proto původní
-tváření. Pokud je potřeba sjednotit (`Česká republika` a `česká republika`
-se v datech vyskytují jako dvě různé hodnoty), je možné agregovat
-nad sloupcem `klicove_slovo_norm`:
+a obecná slova malým (`tornádo`, `pomoc`). Původní tváření proto ponecháváme
+v `klicove_slovo` a pro agregaci bez rozlišování velikosti písmen slouží
+normalizovaný sloupec `klicove_slovo_norm`:
 
 ```{r normalizace klicovych slov}
-klicova_slova <- klicova_slova %>%
-  mutate(klicove_slovo_norm = tolower(klicove_slovo))
-
-klicova_slova %>%
-  count(klicove_slovo_norm, sort = TRUE) %>%
-  head(15)
+head(count(klicova_slova, klicove_slovo_norm, sort = TRUE), 15)
 ```
 
 Rozdíl mezi `r n_distinct(klicova_slova$klicove_slovo)` různými hodnotami
 a `r n_distinct(klicova_slova$klicove_slovo_norm)` po normalizaci ukazuje,
-kolik variant psaných pouze velikostí písmen v datech zůstává.
+kolik variant psaných pouze velikostí písmen v datech zůstává - například
+`Česká republika` a `česká republika` se v datech vyskytují jako dvě různé hodnoty.
 
 ## Výsledek
 
-`r nrow(zpravy)` záznamů, `r ncol(zpravy)` sloupců, z toho
-`r sum(zpravy$Manuálně == "A", na.rm = TRUE)` ručně zanacených.
+`r nrow(newton$zpravy)` záznamů, `r ncol(newton$zpravy)` sloupců, z toho
+`r sum(newton$zpravy[["Manuálně"]] == "A", na.rm = TRUE)` ručně zanacených.
 Zbývající sloupce jsou textové metadatum článků (`Název`, `Zdroj`,
 `Kód článku`, `Země`, ...) a dva sloupce typu `list`/`data.frame` s výstupem
 LLM analýzy - `NER_LLM` a `klíčová slova_LLM` - převedené do dlouhého
-formátu v datafrech `ner` a `klicova_slova`.
+formátu v tabulkách `newton$ner` a `newton$klicova_slova`.
 
 ```{r přehled dat}
-glimpse(zpravy)
+glimpse(newton$zpravy)
 ```
 
 ## Export zdrojů
 
-```{r export zdrojů}
-t <- unique(zpravy$Zdroj) %>%
-  sort()
-zdroje <- data.frame(seq_len(length(t)), t)
-colnames(zdroje) <- c("ID", "zdroj")
-write.csv2(zdroje, file = "zdroje.csv", sep = ";", row.names = FALSE)
-```
+Číselník zdrojů je k dispozici přímo v instanci (`newton$zdroje`) a metodou
+`ulozit_zdroje()` ho lze uložit do CSV souboru se středníkovým oddělovačem.
 
+```{r export zdrojů}
+head(newton$zdroje)
+
+newton$ulozit_zdroje(soubor_zdroju)
+```
