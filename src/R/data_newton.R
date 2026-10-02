@@ -1,49 +1,73 @@
-# Třída DataNewton
-#
-# Načte výstup analýzy Newton One ve formátu JSON Lines (jeden JSON objekt na
-# řádek, např. data/torando_spojene_Gemma4-12b.jsonl) a připraví z něj čtyři
-# tabulky:
-#
-#   zpravy        – zprávy s jednotnými typy (datum, paywall, dosah, sentiment)
-#   ner           – dlouhý formát entit: jeden řádek = jedna entita jednoho článku
-#   klicova_slova – dlouhý formát klíčových slov
-#   zdroje        – číselník zdrojů (ID, zdroj)
-#
-# Postup převodu v konstruktoru odpovídá ručnímu zpracování v souboru
-# data/newton_one.Rmd; jednotlivé kroky jsou oddělené do privátních metod.
-# Zdrojová data se přitom nijak nemění, všechny úpravy vznikají až v paměti.
-#
-# Použití:
-#
-#   data <- DataNewton$new("data/torando_spojene_Gemma4-12b.jsonl")
-#   data$prehled()
-#   data$ulozit_zdroje("zdroje.csv")
-#   head(data$ner)
+#' @description
+#' Třída pro načtení a přípravu dat z výstupu analýzy Newton One ve formátu
+#' JSON Lines (jeden JSON objekt na řádek, např. `data/torando_spojene_Gemma4-12b.jsonl`).
+#'
+#' Z načtených dat vzniknou čtyři tabulky:
+#'
+#' - `zpravy` – zprávy s jednotnými typy hodnot (datum, paywall, dosah, sentiment),
+#' - `ner` – entity nalezené modelem v dlouhém formátu: jeden řádek = jedna entita
+#'   jednoho článku (`ID`, `typ`, `entita`),
+#' - `klicova_slova` – klíčová slova nalezená modelem v dlouhém formátu: jeden
+#'   řádek = jedno klíčové slovo jednoho článku (`ID`, `klicove_slovo`,
+#'   `klicove_slovo_norm`),
+#' - `zdroje` – číselník zdrojů (`ID`, `zdroj`).
+#'
+#' @details
+#' Postup převodu v konstruktoru odpovídá ručnímu zpracování v souboru
+#' `data/newton_one.Rmd`; jednotlivé kroky jsou oddělené do privátních metod.
+#' Zdrojová data se přitom nijak nemění, všechny úpravy vznikají až v paměti.
+#'
+#' Třída pracuje s výstupem LLM analýzy, kde sloupce `NER_LLM` a
+#' `klíčová slova_LLM` obsahují výstup modelu. Sloupce, které v datech chybějí,
+#' se přeskočí a odpovídající tabulka zůstane prázdná.
+#'
+#' @examples
+#' # načtení a přehled dat
+#' data <- DataNewton$new("data/torando_spojene_Gemma4-12b.jsonl")
+#' data
+#' data$prehled()
+#'
+#' # dlouhé formáty pro další agregaci
+#' head(data$ner)
+#' head(data$klicova_slova)
+#'
+#' # články bez nalezené entity a entity s metadaty článku
+#' data$bez_entit()
+#' head(data$s_metadaty())
+#'
+#' # export číselníku zdrojů do CSV
+#' data$ulozit_zdroje("zdroje.csv")
 
 DataNewton <- R6::R6Class(
   classname = "DataNewton",
 
   public = list(
-    #' @description Cesta k JSONL souboru, ze kterého byla data načtena.
+    #' @description
+    #' Cesta k JSONL souboru, ze kterého byla data načtena.
     cesta = NULL,
 
-    #' @description Zprávy s jednotnými typy hodnot.
+    #' @description
+    #' Zprávy s jednotnými typy hodnot.
     zpravy = NULL,
 
-    #' @description Entity nalezené modelem v dlouhém formátu (ID, typ, entita).
+    #' @description
+    #' Entity nalezené modelem v dlouhém formátu (`ID`, `typ`, `entita`).
     ner = NULL,
 
-    #' @description Klíčová slova nalezená modelem v dlouhém formátu
-    #'   (ID, klicove_slovo, klicove_slovo_norm).
+    #' @description
+    #' Klíčová slova nalezená modelem v dlouhém formátu (`ID`, `klicove_slovo`,
+    #' `klicove_slovo_norm`).
     klicova_slova = NULL,
 
-    #' @description Číselník zdrojů (ID, zdroj).
+    #' @description
+    #' Číselník zdrojů (`ID`, `zdroj`).
     zdroje = NULL,
 
     #' @description
     #' Načte JSONL soubor a provede všechny kroky převodu.
     #'
     #' @param cesta Cesta k JSONL souboru s výstupem analýzy.
+    #' @return Instance třídy `DataNewton`.
     initialize = function(cesta) {
       if (!is.character(cesta) || length(cesta) != 1L) {
         stop("Cesta k JSONL souboru musí být jediný řetězec.", call. = FALSE)
@@ -75,9 +99,9 @@ DataNewton <- R6::R6Class(
     #' @description
     #' Vypíše přehled dat: počty záznamů, prázdné hodnoty, rozložení sentimentu
     #' a dezinformací, kontrolu NER a klíčových slov i články bez nalezených
-    #' entit. Odpovídá kontrolním blokům v data/newton_one.Rmd.
+    #' entit. Odpovídá kontrolním blokům v `data/newton_one.Rmd`.
     #'
-    #' @return Třída (nevratná hodnota).
+    #' @return Instance třídy `DataNewton` (nevratná hodnota).
     prehled = function() {
       zpravy <- self$zpravy
 
@@ -173,7 +197,7 @@ DataNewton <- R6::R6Class(
 
     #' @description
     #' Uloží číselník zdrojů do CSV souboru (středníkový oddělovač, kódování
-    #' UTF-8), stejně jako exportní blok v data/newton_one.Rmd.
+    #' UTF-8)
     #'
     #' @param cesta Cesta k výstupnímu CSV souboru.
     #' @return Cesta k uloženému souboru (nevratná hodnota).
@@ -208,6 +232,9 @@ DataNewton <- R6::R6Class(
 
     #' @description
     #' Stručný výpis: zdroj, počty záznamů, entit, klíčových slov a zdrojů.
+    #'
+    #' @param ... Další argumenty se ignorují (pro kompatibilitu s `print`).
+    #' @return Instance třídy `DataNewton` (nevratná hodnota).
     print = function(...) {
       cat(sprintf(
         "<DataNewton> %s: %d zpráv, %d entit, %d klíčových slov, %d zdrojů\n",
@@ -218,12 +245,11 @@ DataNewton <- R6::R6Class(
   ),
 
   private = list(
-    #' @description Typy entit, které se z NER_LLM převádějí do dlouhého formátu.
+    # Typy entit, které se z NER_LLM převádějí do dlouhého formátu
     typy_ner = c("DATE", "FAC", "GPE", "LOC", "ORG", "PER"),
 
-    #' @description
-    #' Načte JSONL soubor (formát JSON Lines – jeden JSON objekt na řádek)
-    #' a přidá sloupec ID s pořadovým číslem záznamu.
+    # Načte JSONL soubor (formát JSON Lines – jeden JSON objekt na řádek)
+    # a přidá sloupec ID s pořadovým číslem záznamu
     importovat = function(cesta) {
       spojeni <- file(cesta, open = "r", encoding = "UTF-8")
       on.exit(close(spojeni), add = TRUE)
@@ -238,10 +264,9 @@ DataNewton <- R6::R6Class(
       zpravy
     },
 
-    #' @description
-    #' Ověří, zda data obsahují očekávané sloupce. Chybějící povinné sloupce
-    #' jsou varování, chybějící sloupce LLM analýzy jen informace – převod
-    #' se u nich přeskočí a výsledná tabulka bude prázdná.
+    # Ověří, zda data obsahují očekávané sloupce. Chybějící povinné sloupce
+    # jsou varování, chybějící sloupce LLM analýzy jen informace – převod
+    # se u nich přeskočí a výsledná tabulka bude prázdná
     overit_sloupce = function(zpravy) {
       povinne <- c("Kód článku", "Název", "Zdroj", "Datum publikování")
       chybi <- setdiff(povinne, names(zpravy))
@@ -262,10 +287,9 @@ DataNewton <- R6::R6Class(
       invisible(NULL)
     },
 
-    #' @description
-    #' Datum publikování: ručně zanacené záznamy mají formát `25.6.2021`,
-    #' automatické ISO formát `2021-06-25`. `parse_date_time` s nabídkou obou
-    #' možností rozpozná oba formáty a převede je na skutečný typ `Date`.
+    # Datum publikování: ručně zanacené záznamy mají formát `25.6.2021`,
+    # automatické ISO formát `2021-06-25`. `parse_date_time` s nabídkou obou
+    # možností rozpozná oba formáty a převede je na skutečný typ `Date`
     sjednotit_datum = function(zpravy) {
       if (!"Datum publikování" %in% names(zpravy)) {
         return(zpravy)
@@ -279,10 +303,9 @@ DataNewton <- R6::R6Class(
       zpravy
     },
 
-    #' @description
-    #' Paywall: `jsonlite` načte sloupec jako text, protože část hodnot není
-    #' logická. Sjednotíme na logický typ, přičemž prázdné hodnoty a `ne`
-    #' znamenají `FALSE`.
+    # Paywall: `jsonlite` načte sloupec jako text, protože část hodnot není
+    # logická. Sjednotíme na logický typ, přičemž prázdné hodnoty a `ne`
+    # znamenají `FALSE`
     sjednotit_paywall = function(zpravy) {
       if (!"Paywall" %in% names(zpravy)) {
         return(zpravy)
@@ -297,9 +320,8 @@ DataNewton <- R6::R6Class(
       zpravy
     },
 
-    #' @description
-    #' Dosah: u ručně zanacených záznamů je místo čísla prázdný řetězec.
-    #' Převedeme na číselný typ a prázdné hodnoty nahradíme `NA`.
+    # Dosah: u ručně zanacených záznamů je místo čísla prázdný řetězec.
+    # Převedeme na číselný typ a prázdné hodnoty nahradíme `NA`
     sjednotit_dosah = function(zpravy) {
       if (!"Dosah" %in% names(zpravy)) {
         return(zpravy)
@@ -312,10 +334,9 @@ DataNewton <- R6::R6Class(
       zpravy
     },
 
-    #' @description
-    #' Ručně zanacené záznamy mají v řadě sloupců prázdný řetězec místo
-    #' skutečné hodnoty. Nahradíme je `NA`, aby se daly filtrovat a agregovat
-    #' jednotně.
+    # Ručně zanacené záznamy mají v řadě sloupců prázdný řetězec místo
+    # skutečné hodnoty. Nahradíme je `NA`, aby se daly filtrovat a agregovat
+    # jednotně
     nahradit_prazdne = function(zpravy) {
       dplyr::mutate(zpravy, dplyr::across(
         dplyr::where(is.character),
@@ -323,10 +344,9 @@ DataNewton <- R6::R6Class(
       ))
     },
 
-    #' @description
-    #' Jednotné názvosloví sentimentu: v datech jsou dva paralelní sloupce
-    #' (`Sentiment` a `sentiment_LLM`), každý používá jinou velikost písmen.
-    #' Sjednotíme velikost písmen na malá a přejmenujeme na názvy bez diakritiky.
+    # Jednotné názvosloví sentimentu: v datech jsou dva paralelní sloupce
+    # (`Sentiment` a `sentiment_LLM`), každý používá jinou velikost písmen.
+    # Sjednotíme velikost písmen na malá a přejmenujeme na názvy bez diakritiky
     sjednotit_sentiment = function(zpravy) {
       for (sloupec in c("Sentiment", "sentiment_LLM")) {
         if (!(sloupec %in% names(zpravy))) {
@@ -341,9 +361,8 @@ DataNewton <- R6::R6Class(
       zpravy
     },
 
-    #' @description
-    #' Sloupec `dezinformace_LLM` používá hodnoty `ano` / `ne`, u ručně
-    #' zanacených záznamů je prázdný. Sjednotíme na hodnoty `ano` / `ne` / `NA`.
+    # Sloupec `dezinformace_LLM` používá hodnoty `ano` / `ne`, u ručně
+    # zanacených záznamů je prázdný. Sjednotíme na hodnoty `ano` / `ne` / `NA`
     sjednotit_dezinformace = function(zpravy) {
       if (!"dezinformace_LLM" %in% names(zpravy)) {
         return(zpravy)
@@ -353,10 +372,9 @@ DataNewton <- R6::R6Class(
       zpravy
     },
 
-    #' @description
-    #' Převod vnořeného `NER_LLM` (data.frame se sloupci pojmenovanými podle
-    #' typů entit, každý se seznamem nalezených hodnot) do dlouhého formátu:
-    #' jeden řádek = jedna entita jednoho článku, se sloupci ID, typ a entita.
+    # Převod vnořeného `NER_LLM` (data.frame se sloupci pojmenovanými podle
+    # typů entit, každý se seznamem nalezených hodnot) do dlouhého formátu:
+    # jeden řádek = jedna entita jednoho článku, se sloupci ID, typ a entita
     prevest_ner = function(zpravy) {
       typy <- private$typy_ner
       if (nrow(zpravy) == 0L) {
@@ -374,10 +392,9 @@ DataNewton <- R6::R6Class(
         dplyr::rename(entita = hodnoty)
     },
 
-    #' @description
-    #' Vrátí `NER_LLM` jako tabulku se sloupci typů entit, která má přesně tolik
-    #' řádků jako zprávy. Chybějící typy doplníme prázdnými hodnotami a chybějící
-    #' řádky přidáme na konec, aby šly entity bezpečně přiřadit k článkům.
+    # Vrátí `NER_LLM` jako tabulku se sloupci typů entit, která má přesně tolik
+    # řádků jako zprávy. Chybějící typy doplníme prázdnými hodnotami a chybějící
+    # řádky přidáme na konec, aby šly entity bezpečně přiřadit k článkům
     pripojit_ner = function(zpravy, typy) {
       pocet <- nrow(zpravy)
       prazdna <- function(n) {
@@ -430,11 +447,10 @@ DataNewton <- R6::R6Class(
       nested
     },
 
-    #' @description
-    #' Převede sloupec se seznamy nalezených hodnot na seznam textových vektorů.
-    #' `NULL`, prázdný seznam i prázdný text se sjednotí na `character(0)`,
-    #' případné vnořené seznamy se rozbalí. Bez tohoto kroku nelze sloupec
-    #' rozbalit přes `tidyr::unnest`.
+    # Převede sloupec se seznamy nalezených hodnot na seznam textových vektorů.
+    # `NULL`, prázdný seznam i prázdný text se sjednotí na `character(0)`,
+    # případné vnořené seznamy se rozbalí. Bez tohoto kroku nelze sloupec
+    # rozbalit přes `tidyr::unnest`
     textove_hodnoty = function(hodnoty) {
       lapply(hodnoty, function(x) {
         if (is.null(x)) {
@@ -450,13 +466,12 @@ DataNewton <- R6::R6Class(
       })
     },
 
-    #' @description
-    #' Sloupec `klíčová slova_LLM` je jen sloupec typu `list`, kde každý prvek
-    #' obsahuje textový vektor nalezených klíčových slov. Stačí ho rozbalit na
-    #' jednotlivé řádky – jeden řádek = jedno klíčové slovo jednoho článku.
-    #' Velikost písmen u klíčových slov význam nese (model psal vlastní jména
-    #' s velkým písmenem), proto ponecháváme původní psaní a vedle něj doplňujeme
-    #' normalizovaný sloupec pro agregaci bez rozlišování velikosti písmen.
+    # Sloupec `klíčová slova_LLM` je jen sloupec typu `list`, kde každý prvek
+    # obsahuje textový vektor nalezených klíčových slov. Stačí ho rozbalit na
+    # jednotlivé řádky – jeden řádek = jedno klíčové slovo jednoho článku.
+    # Velikost písmen u klíčových slov význam nese (model psal vlastní jména
+    # s velkým písmenem), proto ponecháváme původní psaní a vedle něj doplňujeme
+    # normalizovaný sloupec pro agregaci bez rozlišování velikosti písmen
     prevest_klicova_slova = function(zpravy) {
       if (nrow(zpravy) == 0L) {
         return(tibble::tibble(ID = integer(), klicove_slovo = character(),
@@ -478,9 +493,8 @@ DataNewton <- R6::R6Class(
         dplyr::mutate(klicove_slovo_norm = tolower(klicove_slovo))
     },
 
-    #' @description
-    #' Číselník zdrojů – unikátní názvy zdrojů seřazené abecedně s číslem
-    #' podle pořadí.
+    # Číselník zdrojů – unikátní názvy zdrojů seřazené abecedně s číslem
+    # podle pořadí
     sestavit_zdroje = function(zpravy) {
       if (!("Zdroj" %in% names(zpravy))) {
         return(tibble::tibble(ID = integer(), zdroj = character()))
@@ -491,9 +505,8 @@ DataNewton <- R6::R6Class(
       tibble::tibble(ID = seq_along(zdroj), zdroj = zdroj)
     },
 
-    #' @description
-    #' Počet chybějících hodnot (`NA`) v jednotlivých sloupcích. Sloupce s
-    #' vnořenými hodnotami (`NER_LLM`, `klíčová slova_LLM`) se nepočítají.
+    # Počet chybějících hodnot (`NA`) v jednotlivých sloupcích. Sloupce s
+    # vnořenými hodnotami (`NER_LLM`, `klíčová slova_LLM`) se nepočítají
     pocet_na = function(zpravy) {
       vapply(zpravy, function(sloupec) {
         if (is.atomic(sloupec)) sum(is.na(sloupec)) else NA_integer_
