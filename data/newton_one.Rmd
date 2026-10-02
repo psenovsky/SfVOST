@@ -215,14 +215,70 @@ ner %>%
   head()
 ```
 
+## Dataframe klíčových slov
+
+Sloupec `klíčová slova_LLM` je na rozdíl od `NER_LLM` jen sloupec typu `list`,
+kde každý prvek obsahuje textový vektor nalezených klíčových slov. Stačí ho
+rozbalit na jednotlivé řádky - jeden řádek = jedno klíčové slovo jednoho
+článku, se sloupci `ID` (odkaz na článek v `zpravy`) a `klicove_slovo`.
+
+```{r dlouha klicova slova}
+klicova_slova <- zpravy %>%
+  select(ID, `klíčová slova_LLM`) %>%
+  unnest(`klíčová slova_LLM`, keep_empty = FALSE) %>%
+  rename(klicove_slovo = `klíčová slova_LLM`) %>%
+  filter(!is.na(klicove_slovo), klicove_slovo != "")
+
+head(klicova_slova)
+```
+
+```{r kontrola klicovych slov}
+nrow(klicova_slova)
+n_distinct(klicova_slova$klicove_slovo)
+n_distinct(klicova_slova$ID)
+```
+
+Dataframe `klicova_slova` obsahuje `r nrow(klicova_slova)` výskytů
+`r n_distinct(klicova_slova$klicove_slovo)` různých klíčových slov
+v `r n_distinct(klicova_slova$ID)` z `r nrow(zpravy)` článků.
+Jediný článek bez klíčových slov je ID `r setdiff(zpravy$ID, klicova_slova$ID)`,
+který zároveň nemá ani nalezené entity - jde o živý přenos
+z e15.cz bez analyzovaného textu.
+
+```{r nejcastejsi klicova slova}
+head(count(klicova_slova, klicove_slovo, sort = TRUE), 15)
+```
+
+### Velikost písmen u klíčových slov
+
+Na rozdíl od sloupců se sentimentem zde **velikost písmen nese význam** -
+model psal vlastní jména s velkým písmenem (`Morava`, `Česká republika`)
+a obecná slova malým (`tornádo`, `pomoc`). Ponechali jsme proto původní
+tváření. Pokud je potřeba sjednotit (`Česká republika` a `česká republika`
+se v datech vyskytují jako dvě různé hodnoty), je možné agregovat
+nad sloupcem `klicove_slovo_norm`:
+
+```{r normalizace klicovych slov}
+klicova_slova <- klicova_slova %>%
+  mutate(klicove_slovo_norm = tolower(klicove_slovo))
+
+klicova_slova %>%
+  count(klicove_slovo_norm, sort = TRUE) %>%
+  head(15)
+```
+
+Rozdíl mezi `r n_distinct(klicova_slova$klicove_slovo)` různými hodnotami
+a `r n_distinct(klicova_slova$klicove_slovo_norm)` po normalizaci ukazuje,
+kolik variant psaných pouze velikostí písmen v datech zůstává.
+
 ## Výsledek
 
 `r nrow(zpravy)` záznamů, `r ncol(zpravy)` sloupců, z toho
 `r sum(zpravy$Manuálně == "A", na.rm = TRUE)` ručně zanacených.
 Zbývající sloupce jsou textové metadatum článků (`Název`, `Zdroj`,
-`Kód článku`, `Země`, ...) a seznam `klíčová slova_LLM` - klíčová slova
-je potřeba rozbalit do dlouhého formátu obdobně jako entity v dataframe
-`ner`.
+`Kód článku`, `Země`, ...) a dva sloupce typu `list`/`data.frame` s výstupem
+LLM analýzy - `NER_LLM` a `klíčová slova_LLM` - převedené do dlouhého
+formátu v datafrech `ner` a `klicova_slova`.
 
 ```{r přehled dat}
 glimpse(zpravy)
