@@ -283,3 +283,14 @@ formátu v datafrech `ner` a `klicova_slova`.
 ```{r přehled dat}
 glimpse(zpravy)
 ```
+
+## Export zdrojů
+
+```{r export zdrojů}
+t <- unique(zpravy$Zdroj) %>%
+  sort()
+zdroje <- data.frame(seq_len(length(t)), t)
+colnames(zdroje) <- c("ID", "zdroj")
+write.csv2(zdroje, file = "zdroje.csv", sep = ";", row.names = FALSE)
+```
+
